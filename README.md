@@ -2,6 +2,13 @@
 
 This is a tiny web app for online self-attendance.
 
+For the broader election-management product plan, see:
+
+- [Election Platform README](docs/ELECTION_PLATFORM_README.md)
+- [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
+
+The new Postgres-backed election API lives in `backend/`. The current static attendance app still works with Apps Script while the election backend is being built.
+
 People open one link, scan their MyGate QR code or upload a screenshot, and the app writes a row to the `Attendance` sheet after matching the passcode in `Resident Master`.
 
 The scanner is a static website in `web/`. Google Apps Script is used only as the Google Sheets backend because Apps Script HTML pages can block camera access in modern browser sandboxing.
