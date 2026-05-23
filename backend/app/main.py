@@ -41,6 +41,14 @@ class ElectionCreate(BaseModel):
     allow_defaulters_to_vote: bool = False
 
 
+class ElectionUpdate(BaseModel):
+    title: str = Field(min_length=1)
+    description: str = ""
+    quorum_percent: Decimal = Decimal("50.0")
+    include_defaulters_in_quorum: bool = False
+    allow_defaulters_to_vote: bool = False
+
+
 class ElectionStatusUpdate(BaseModel):
     status: str
     voting_opens_at: datetime | None = None
@@ -477,6 +485,51 @@ def get_election(election_id: str) -> dict[str, Any]:
     return response
 
 
+@app.patch("/api/elections/{election_id}")
+def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]:
+    with connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE elections
+                SET title = %s,
+                    description = %s,
+                    quorum_percent = %s,
+                    include_defaulters_in_quorum = %s,
+                    allow_defaulters_to_vote = %s,
+                    updated_at = now()
+                WHERE id = %s
+                RETURNING id
+                """,
+                (
+                    clean(payload.title),
+                    clean(payload.description),
+                    payload.quorum_percent,
+                    payload.include_defaulters_in_quorum,
+                    payload.allow_defaulters_to_vote,
+                    election_id,
+                ),
+            )
+            updated = cur.fetchone()
+            election = fetch_election_summary(cur, election_id) if updated else None
+        conn.commit()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+    return election_public(election)
+
+
+@app.delete("/api/elections/{election_id}")
+def delete_election(election_id: str) -> dict[str, str]:
+    with connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM elections WHERE id = %s RETURNING id", (election_id,))
+            deleted = cur.fetchone()
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Election not found")
+    return {"status": "deleted"}
+
+
 @app.post("/api/elections/{election_id}/questions")
 def add_question(election_id: str, payload: QuestionCreate) -> dict[str, Any]:
     passing_rule = validate_choice(payload.passing_rule, PASSING_RULES, "passing rule")
@@ -663,7 +716,16 @@ def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
             )
             proxy = cur.fetchone()
         conn.commit()
-    return proxy
+    return {
+        "id": str(proxy["id"]),
+        "election_id": str(proxy["election_id"]) if proxy["election_id"] else None,
+        "grantor_house_id": proxy["grantor_house_id"],
+        "proxy_holder_user_id": proxy["proxy_holder_user_id"],
+        "status": proxy["status"],
+        "notes": proxy["notes"],
+        "created_at": proxy["created_at"],
+        "updated_at": proxy["updated_at"],
+    }
 
 
 @app.get("/api/proxies")
@@ -677,12 +739,28 @@ def list_proxies(election_id: str | None = None) -> list[dict[str, Any]]:
                 JOIN villas v ON v.house_id = p.grantor_house_id
                 JOIN residents r ON r.user_id = p.proxy_holder_user_id
                 JOIN villas rv ON rv.house_id = r.house_id
-                WHERE %s IS NULL OR p.election_id = %s OR p.election_id IS NULL
+                WHERE %s::uuid IS NULL OR p.election_id = %s::uuid OR p.election_id IS NULL
                 ORDER BY p.created_at DESC
                 """,
                 (election_id, election_id),
             )
-            return cur.fetchall()
+            rows = cur.fetchall()
+    return [
+        {
+            "id": str(row["id"]),
+            "election_id": str(row["election_id"]) if row["election_id"] else None,
+            "grantor_house_id": row["grantor_house_id"],
+            "grantor_house_no": row["grantor_house_no"],
+            "proxy_holder_user_id": row["proxy_holder_user_id"],
+            "proxy_holder_name": row["proxy_holder_name"],
+            "proxy_holder_house_no": row["proxy_holder_house_no"],
+            "status": row["status"],
+            "notes": row["notes"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+        }
+        for row in rows
+    ]
 
 
 @app.post("/api/proxies/{proxy_id}/cancel")

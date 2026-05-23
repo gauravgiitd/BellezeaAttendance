@@ -38,14 +38,24 @@ const questionListElement = document.querySelector('#question-list');
 const activeElectionStatusElement = document.querySelector('#active-election-status');
 const headerQuorumElement = document.querySelector('#header-quorum');
 const activeElectionView = document.querySelector('#active-election-view');
-const createElectionPanel = document.querySelector('#create-election-panel');
-const questionPanel = document.querySelector('#question-panel');
 const selectedElectionTitleElement = document.querySelector('#selected-election-title');
 const stageListElement = document.querySelector('#stage-list');
 const stageActionButton = document.querySelector('#stage-action-button');
+const modeTabs = Array.from(document.querySelectorAll('.mode-tab'));
+const appViews = Array.from(document.querySelectorAll('.app-view'));
+const manageStatusElement = document.querySelector('#manage-status');
+const newElectionButton = document.querySelector('#new-election-button');
+const deleteElectionButton = document.querySelector('#delete-election-button');
+const saveElectionButton = document.querySelector('#save-election-button');
+const proxyForm = document.querySelector('#proxy-form');
+const proxyGrantorHouseIdInput = document.querySelector('#proxy-grantor-house-id');
+const proxyHolderUserIdInput = document.querySelector('#proxy-holder-user-id');
+const proxyNotesInput = document.querySelector('#proxy-notes');
+const proxyListElement = document.querySelector('#proxy-list');
 
 const DEFAULT_API_URL = 'https://bellezea-elections-api.onrender.com';
 const ACTIVE_ELECTION_KEY = 'bellezea-active-election-id';
+const ACTIVE_MODE_KEY = 'bellezea-officer-mode';
 const ELECTION_FLOW = [
   { status: 'draft', label: 'Setup' },
   { status: 'attendance_open', label: 'Attendance' },
@@ -70,10 +80,25 @@ let elections = [];
 let activeElection = null;
 let activeElectionDetail = null;
 let dashboardAttendees = [];
+let proxies = [];
+let editingNewElection = false;
 
 function getApiUrl() {
   const config = window.AttendanceConfig || {};
   return String(config.apiUrl || DEFAULT_API_URL).trim().replace(/\/+$/, '');
+}
+
+function switchMode(mode) {
+  const target = mode || 'manage';
+  modeTabs.forEach((tab) => {
+    const active = tab.dataset.mode === target;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  appViews.forEach((view) => {
+    view.classList.toggle('active', view.id === `${target}-view`);
+  });
+  window.localStorage.setItem(ACTIVE_MODE_KEY, target);
 }
 
 function setStatus(type, title, copy, resident) {
@@ -92,6 +117,11 @@ function setStatus(type, title, copy, resident) {
     <p class="status-copy">${escapeHtml(copy || '')}</p>
     ${residentHtml}
   `;
+}
+
+function setManageStatus(type, message) {
+  manageStatusElement.className = `inline-status ${type || ''}`.trim();
+  manageStatusElement.textContent = message || '';
 }
 
 function setDashboardLoading(message = 'Loading elections...') {
@@ -158,8 +188,8 @@ async function loadElections() {
 function renderElectionSelect() {
   if (!elections.length) {
     electionSelect.innerHTML = '<option value="">No elections yet</option>';
-    createElectionPanel.open = true;
     activeElectionView.hidden = true;
+    setElectionFormMode('new');
     return;
   }
   electionSelect.innerHTML = elections.map((election) => `
@@ -175,6 +205,7 @@ async function selectInitialElection() {
     renderQuestions();
     renderEmptyDashboard();
     renderElectionStage();
+    renderProxyList();
     return;
   }
 
@@ -189,7 +220,10 @@ async function loadElectionDetail(electionId) {
   activeElectionDetail = await apiRequest(`/api/elections/${encodeURIComponent(electionId)}`);
   activeElection = activeElectionDetail;
   window.localStorage.setItem(ACTIVE_ELECTION_KEY, electionId);
+  editingNewElection = false;
+  populateElectionForm(activeElectionDetail);
   renderQuestions();
+  await loadProxies();
   renderElectionStage();
   await loadDashboard();
 }
@@ -212,10 +246,36 @@ function renderElectionStage() {
     stageActionButton.disabled = Boolean(quorumBlocked);
   }
 
-  const setupStatus = status === 'draft' || !activeElection;
-  createElectionPanel.open = !activeElection;
-  questionPanel.open = setupStatus;
   activeElectionView.classList.toggle('is-draft', status === 'draft');
+}
+
+function setElectionFormMode(mode) {
+  editingNewElection = mode === 'new';
+  if (editingNewElection) {
+    electionForm.reset();
+    electionQuorumInput.value = '50';
+    electionStatusSelect.value = 'draft';
+    deleteElectionButton.disabled = true;
+    saveElectionButton.textContent = 'Create Election';
+    setManageStatus('', '');
+    return;
+  }
+  deleteElectionButton.disabled = !activeElection;
+  saveElectionButton.textContent = 'Save Election';
+}
+
+function populateElectionForm(election) {
+  if (!election) {
+    setElectionFormMode('new');
+    return;
+  }
+  electionTitleInput.value = election.title || '';
+  electionDescriptionInput.value = election.description || '';
+  electionQuorumInput.value = election.quorum_percent || 50;
+  electionStatusSelect.value = election.status || 'draft';
+  includeDefaultersQuorumInput.checked = Boolean(election.include_defaulters_in_quorum);
+  allowDefaultersVoteInput.checked = Boolean(election.allow_defaulters_to_vote);
+  setElectionFormMode('edit');
 }
 
 function renderQuestions() {
@@ -324,52 +384,153 @@ async function loadDashboard() {
   }
 }
 
-async function createElection(event) {
+async function saveElection(event) {
   event.preventDefault();
   const title = electionTitleInput.value.trim();
   if (!title) return;
 
-  setStatus('', 'Creating election', 'Saving election setup.');
+  setManageStatus('', editingNewElection || !activeElection ? 'Creating election...' : 'Saving election...');
+  const payload = {
+    title,
+    description: electionDescriptionInput.value.trim(),
+    quorum_percent: Number(electionQuorumInput.value || 50),
+    include_defaulters_in_quorum: includeDefaultersQuorumInput.checked,
+    allow_defaulters_to_vote: allowDefaultersVoteInput.checked,
+  };
+
   try {
-    const election = await apiRequest('/api/elections', {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        description: electionDescriptionInput.value.trim(),
-        quorum_percent: Number(electionQuorumInput.value || 50),
-        include_defaulters_in_quorum: includeDefaultersQuorumInput.checked,
-        allow_defaulters_to_vote: allowDefaultersVoteInput.checked,
-      }),
-    });
-    if (electionStatusSelect.value !== 'draft') {
-      await apiRequest(`/api/elections/${encodeURIComponent(election.id)}/status`, {
+    let election;
+    if (editingNewElection || !activeElection) {
+      election = await apiRequest('/api/elections', {
         method: 'POST',
-        body: JSON.stringify({ status: electionStatusSelect.value }),
+        body: JSON.stringify(payload),
       });
+      if (electionStatusSelect.value !== 'draft') {
+        await apiRequest(`/api/elections/${encodeURIComponent(election.id)}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status: electionStatusSelect.value }),
+        });
+      }
+    } else {
+      election = await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+      if (electionStatusSelect.value !== activeElection.status) {
+        await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status: electionStatusSelect.value }),
+        });
+      }
     }
-    electionForm.reset();
-    electionQuorumInput.value = '50';
-    setStatus('success', 'Election created', `${title} is ready for questions and attendance.`);
+
+    setManageStatus('success', editingNewElection ? 'Election created.' : 'Election updated.');
     await loadElections();
     electionSelect.value = election.id;
     await loadElectionDetail(election.id);
-    createElectionPanel.open = false;
-    questionPanel.open = true;
   } catch (error) {
-    setStatus('error', 'Could not create election', error.message || 'Please try again.');
+    setManageStatus('error', error.message || 'Could not save election.');
+  }
+}
+
+async function deleteElection() {
+  if (!activeElection || editingNewElection) return;
+  const confirmed = window.confirm(`Delete "${activeElection.title}"? This will remove its setup and attendance records.`);
+  if (!confirmed) return;
+  try {
+    await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}`, { method: 'DELETE' });
+    window.localStorage.removeItem(ACTIVE_ELECTION_KEY);
+    activeElection = null;
+    activeElectionDetail = null;
+    setManageStatus('success', 'Election deleted.');
+    await loadElections();
+  } catch (error) {
+    setManageStatus('error', error.message || 'Could not delete election.');
+  }
+}
+
+async function loadProxies() {
+  if (!activeElection) {
+    proxies = [];
+    renderProxyList();
+    return;
+  }
+  try {
+    proxies = await apiRequest(`/api/proxies?election_id=${encodeURIComponent(activeElection.id)}`);
+    renderProxyList();
+  } catch (error) {
+    proxies = [];
+    proxyListElement.innerHTML = `<p class="empty-list">${escapeHtml(error.message || 'Could not load proxies.')}</p>`;
+  }
+}
+
+function renderProxyList() {
+  if (!activeElection) {
+    proxyListElement.innerHTML = '<p class="empty-list">Select an election to manage proxies.</p>';
+    return;
+  }
+  const scopedProxies = proxies.filter((proxy) => !proxy.election_id || proxy.election_id === activeElection.id);
+  if (!scopedProxies.length) {
+    proxyListElement.innerHTML = '<p class="empty-list">No proxies configured for this election.</p>';
+    return;
+  }
+  proxyListElement.innerHTML = scopedProxies.map((proxy) => `
+    <article class="proxy-row">
+      <div>
+        <strong>${escapeHtml(proxy.grantor_house_no || proxy.grantor_house_id)}</strong>
+        <small>${escapeHtml(proxy.proxy_holder_name || proxy.proxy_holder_user_id)}${proxy.proxy_holder_house_no ? ` | ${escapeHtml(proxy.proxy_holder_house_no)}` : ''}</small>
+      </div>
+      <button class="secondary small-button" type="button" data-cancel-proxy="${escapeHtml(proxy.id)}">Cancel</button>
+    </article>
+  `).join('');
+}
+
+async function addProxy(event) {
+  event.preventDefault();
+  if (!requireActiveElection()) return;
+  try {
+    await apiRequest('/api/proxies', {
+      method: 'POST',
+      body: JSON.stringify({
+        election_id: activeElection.id,
+        grantor_house_id: proxyGrantorHouseIdInput.value.trim(),
+        proxy_holder_user_id: proxyHolderUserIdInput.value.trim(),
+        notes: proxyNotesInput.value.trim(),
+      }),
+    });
+    proxyForm.reset();
+    setManageStatus('success', 'Proxy added.');
+    await loadProxies();
+  } catch (error) {
+    setManageStatus('error', error.message || 'Could not add proxy.');
+  }
+}
+
+async function cancelProxy(proxyId) {
+  try {
+    await apiRequest(`/api/proxies/${encodeURIComponent(proxyId)}/cancel`, {
+        method: 'POST',
+      });
+    setManageStatus('success', 'Proxy cancelled.');
+    await loadProxies();
+  } catch (error) {
+    setManageStatus('error', error.message || 'Could not cancel proxy.');
   }
 }
 
 async function addQuestion(event) {
   event.preventDefault();
-  if (!requireActiveElection()) return;
+  if (!activeElection) {
+    setManageStatus('warning', 'Select or create an election before adding questions.');
+    return;
+  }
 
   const questionText = questionTextInput.value.trim();
   const choiceOne = choiceOneInput.value.trim();
   const choiceTwo = choiceTwoInput.value.trim();
   if (!questionText || !choiceOne || !choiceTwo) return;
 
-  setStatus('', 'Adding question', 'Saving choices and passing rule.');
+  setManageStatus('', 'Adding question...');
   try {
     const passingRule = passingRuleSelect.value;
     await apiRequest(`/api/elections/${encodeURIComponent(activeElectionId())}/questions`, {
@@ -387,10 +548,10 @@ async function addQuestion(event) {
       }),
     });
     questionForm.reset();
-    setStatus('success', 'Question added', 'The election question is now available.');
+    setManageStatus('success', 'Question added.');
     await loadElectionDetail(activeElectionId());
   } catch (error) {
-    setStatus('error', 'Could not add question', error.message || 'Please try again.');
+    setManageStatus('error', error.message || 'Could not add question.');
   }
 }
 
@@ -618,6 +779,9 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;');
 }
 
+modeTabs.forEach((tab) => {
+  tab.addEventListener('click', () => switchMode(tab.dataset.mode));
+});
 scanButton.addEventListener('click', toggleScanner);
 fileInput.addEventListener('change', (event) => scanFile(event.target.files[0]));
 manualButton.addEventListener('click', submitManual);
@@ -625,14 +789,24 @@ manualAttendanceForm.addEventListener('submit', submitManualAttendance);
 refreshDashboardButton.addEventListener('click', loadDashboard);
 refreshElectionsButton.addEventListener('click', loadElections);
 attendeeSearchInput.addEventListener('input', renderAttendees);
-electionForm.addEventListener('submit', createElection);
+electionForm.addEventListener('submit', saveElection);
 questionForm.addEventListener('submit', addQuestion);
 electionSelect.addEventListener('change', () => loadElectionDetail(electionSelect.value));
 stageActionButton.addEventListener('click', advanceElectionStage);
+newElectionButton.addEventListener('click', () => setElectionFormMode('new'));
+deleteElectionButton.addEventListener('click', deleteElection);
+proxyForm.addEventListener('submit', addProxy);
+proxyListElement.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-cancel-proxy]');
+  if (button) {
+    cancelProxy(button.dataset.cancelProxy);
+  }
+});
 manualInput.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     submitManual();
   }
 });
 
+switchMode(window.localStorage.getItem(ACTIVE_MODE_KEY) || 'manage');
 loadElections();

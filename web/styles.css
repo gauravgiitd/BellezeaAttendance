@@ -73,22 +73,33 @@ h2 {
   text-align: right;
 }
 
-.top-controls {
-  width: min(100%, 520px);
+.mode-tabs {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mode-tab {
+  min-height: 42px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mode-tab.active {
+  color: #fff;
+  background: var(--brand);
+}
+
+.election-picker {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: end;
+  grid-template-columns: minmax(280px, 520px) auto 1fr;
   gap: 10px;
-}
-
-.active-election-control {
-  min-width: 0;
-}
-
-.command-strip {
-  display: grid;
-  grid-template-columns: auto auto 1fr;
-  gap: 18px;
   align-items: center;
   margin-bottom: 14px;
   padding: 12px 14px;
@@ -97,22 +108,16 @@ h2 {
   background: rgba(255, 255, 255, 0.72);
 }
 
-.command-strip div {
-  min-width: 120px;
+.active-election-control {
+  min-width: 0;
 }
 
-.command-strip span {
-  display: block;
-  color: var(--muted);
-  font-size: 0.74rem;
-  font-weight: 800;
-  text-transform: uppercase;
+.app-view {
+  display: none;
 }
 
-.command-strip strong {
+.app-view.active {
   display: block;
-  margin-top: 3px;
-  font-size: 1rem;
 }
 
 .active-election-view {
@@ -157,6 +162,17 @@ h2 {
 .stage-actions strong {
   color: var(--muted);
   font-size: 0.95rem;
+}
+
+.manage-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(340px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.config-pane {
+  grid-row: span 2;
 }
 
 .stage-list {
@@ -240,6 +256,12 @@ h2 {
   grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
   gap: 16px;
   align-items: start;
+}
+
+.manage-grid .drawer-form,
+.question-pane .drawer-form,
+.proxy-pane .drawer-form {
+  padding: 0;
 }
 
 .pane {
@@ -356,6 +378,12 @@ button:active,
   transform: translateY(1px);
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
 .primary {
   color: #fff;
   background: var(--brand);
@@ -378,10 +406,29 @@ button:active,
   border-color: var(--line);
 }
 
+.danger-button {
+  color: var(--danger);
+  background: #fef3f2;
+  border-color: rgba(180, 35, 24, 0.28);
+}
+
 .secondary:hover,
 .file-button:hover,
+.danger-button:hover,
 .icon-button:hover {
   border-color: #aeb8c8;
+}
+
+.small-button {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 0.9rem;
+}
+
+.button-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .icon-button {
@@ -697,6 +744,22 @@ select:focus {
   line-height: 1.4;
 }
 
+.inline-status {
+  min-height: 20px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.inline-status.success {
+  color: var(--success);
+}
+
+.inline-status.error,
+.inline-status.warning {
+  color: var(--danger);
+}
+
 .question-list {
   display: grid;
   gap: 10px;
@@ -732,10 +795,42 @@ select:focus {
   text-transform: uppercase;
 }
 
+.proxy-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.proxy-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--soft);
+}
+
+.proxy-row strong {
+  display: block;
+}
+
+.proxy-row small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+
 @media (max-width: 1080px) {
   .meeting-grid,
+  .manage-grid,
   .questions-workspace {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .config-pane {
+    grid-row: auto;
   }
 }
 
@@ -749,8 +844,8 @@ select:focus {
     gap: 12px;
   }
 
-  .top-controls,
-  .command-strip {
+  .mode-tabs,
+  .election-picker {
     grid-template-columns: 1fr;
   }
 
@@ -770,14 +865,20 @@ select:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .manage-grid,
   .meeting-grid,
   .questions-workspace,
   .actions,
   .manual-row,
   .resident,
   .summary-grid,
-  .form-grid.two {
+  .form-grid.two,
+  .proxy-row {
     grid-template-columns: 1fr;
+  }
+
+  .button-row {
+    display: grid;
   }
 
   .attendee-list {
