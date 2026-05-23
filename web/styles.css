@@ -355,6 +355,24 @@ textarea:focus {
   font-weight: 800;
 }
 
+.attendee-search {
+  margin-bottom: 12px;
+}
+
+.attendee-search input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+}
+
+.attendee-search input:focus {
+  outline: 3px solid rgba(14, 124, 102, 0.18);
+  border-color: var(--brand);
+}
+
 .attendee-list {
   max-height: calc(100vh - 150px);
   overflow: auto;

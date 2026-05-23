@@ -6,8 +6,8 @@
     <title>Nambiar Bellezea Attendance</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260523-4" defer></script>
-    <script src="app.js?v=20260523-4" defer></script>
+    <script src="config.js?v=20260523-5" defer></script>
+    <script src="app.js?v=20260523-5" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -89,6 +89,9 @@
           <div class="pane-head">
             <h2>Attendees</h2>
             <span id="attendee-count" class="count-pill">0</span>
+          </div>
+          <div class="attendee-search">
+            <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
           </div>
           <div id="attendee-list" class="attendee-list" role="list">
             <p class="empty-list">No attendance marked yet.</p>

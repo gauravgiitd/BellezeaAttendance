@@ -10,6 +10,7 @@ const representationPctElement = document.querySelector('#representation-pct');
 const representationBarElement = document.querySelector('#representation-bar');
 const attendeeCountElement = document.querySelector('#attendee-count');
 const attendeeListElement = document.querySelector('#attendee-list');
+const attendeeSearchInput = document.querySelector('#attendee-search');
 const dashboardUpdatedElement = document.querySelector('#dashboard-updated');
 const refreshDashboardButton = document.querySelector('#refresh-dashboard');
 const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwDK6bZbTX_EX1VEdwAxV-74I1DnzGQH8XUrOIo_cFDKmMBI18qmXRgBNdIXxhnMBuOMA/exec';
@@ -17,6 +18,7 @@ const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwDK6bZbTX_EX1V
 let html5QrCode = null;
 let scanning = false;
 let submitting = false;
+let dashboardAttendees = [];
 
 window.AttendanceCallbacks = window.AttendanceCallbacks || {};
 
@@ -57,16 +59,26 @@ function renderDashboard(data) {
   const representedVillas = Number(data && data.representedVillas ? data.representedVillas : 0);
   const representationPct = Number(data && data.representationPct ? data.representationPct : 0);
   const attendees = Array.isArray(data && data.attendees) ? data.attendees : [];
+  dashboardAttendees = attendees;
 
   totalVillasElement.textContent = formatInt(totalVillas);
   representedVillasElement.textContent = formatInt(representedVillas);
   representationPctElement.textContent = `${formatPct(representationPct)}%`;
   representationBarElement.style.width = `${Math.max(0, Math.min(100, representationPct))}%`;
   attendeeCountElement.textContent = formatInt(attendees.length);
-  attendeeListElement.innerHTML = attendees.length
-    ? attendees.map(attendeeRowHtml).join('')
-    : '<p class="empty-list">No attendance marked yet.</p>';
+  renderAttendees();
   dashboardUpdatedElement.textContent = `Updated ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
+function renderAttendees() {
+  const query = attendeeSearchInput.value.trim().toLowerCase();
+  const filtered = query
+    ? dashboardAttendees.filter((attendee) => `${attendee.name || ''} ${attendee.flat || ''}`.toLowerCase().includes(query))
+    : dashboardAttendees;
+
+  attendeeListElement.innerHTML = filtered.length
+    ? filtered.map(attendeeRowHtml).join('')
+    : `<p class="empty-list">${dashboardAttendees.length ? 'No attendees match this search.' : 'No attendance marked yet.'}</p>`;
 }
 
 function attendeeRowHtml(attendee) {
@@ -74,7 +86,7 @@ function attendeeRowHtml(attendee) {
     <div class="attendee-row" role="listitem">
       <span>
         <strong>${escapeHtml(attendee.name || '-')}</strong>
-        <small>${escapeHtml(attendee.userType || '')}</small>
+        <small>${escapeHtml([attendee.userType, attendee.attendanceTime].filter(Boolean).join(' | '))}</small>
       </span>
       <span class="villa-tag">${escapeHtml(attendee.flat || '-')}</span>
     </div>
@@ -298,6 +310,7 @@ scanButton.addEventListener('click', toggleScanner);
 fileInput.addEventListener('change', (event) => scanFile(event.target.files[0]));
 manualButton.addEventListener('click', submitManual);
 refreshDashboardButton.addEventListener('click', loadDashboard);
+attendeeSearchInput.addEventListener('input', renderAttendees);
 manualInput.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     submitManual();
