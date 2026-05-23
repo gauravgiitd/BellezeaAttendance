@@ -37,12 +37,31 @@ const passingThresholdInput = document.querySelector('#passing-threshold');
 const questionListElement = document.querySelector('#question-list');
 const activeElectionStatusElement = document.querySelector('#active-election-status');
 const headerQuorumElement = document.querySelector('#header-quorum');
-const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
-const workspaces = Array.from(document.querySelectorAll('.workspace'));
+const activeElectionView = document.querySelector('#active-election-view');
+const createElectionPanel = document.querySelector('#create-election-panel');
+const questionPanel = document.querySelector('#question-panel');
+const selectedElectionTitleElement = document.querySelector('#selected-election-title');
+const stageListElement = document.querySelector('#stage-list');
+const stageActionButton = document.querySelector('#stage-action-button');
 
 const DEFAULT_API_URL = 'https://bellezea-elections-api.onrender.com';
 const ACTIVE_ELECTION_KEY = 'bellezea-active-election-id';
-const ACTIVE_VIEW_KEY = 'bellezea-officer-view';
+const ELECTION_FLOW = [
+  { status: 'draft', label: 'Setup' },
+  { status: 'attendance_open', label: 'Attendance' },
+  { status: 'discussion', label: 'Discussion' },
+  { status: 'voting_open', label: 'Voting' },
+  { status: 'voting_closed', label: 'Closed' },
+  { status: 'results_published', label: 'Results' },
+];
+const STAGE_ACTIONS = {
+  draft: { label: 'Start Attendance', nextStatus: 'attendance_open' },
+  attendance_open: { label: 'Start Discussion', nextStatus: 'discussion' },
+  discussion: { label: 'Open Voting', nextStatus: 'voting_open', requiresQuorum: true },
+  voting_open: { label: 'Close Voting', nextStatus: 'voting_closed' },
+  voting_closed: { label: 'Publish Results', nextStatus: 'results_published' },
+};
+const ATTENDANCE_STATUSES = new Set(['attendance_open', 'discussion', 'voting_open', 'voting_closed', 'results_published']);
 
 let html5QrCode = null;
 let scanning = false;
@@ -51,19 +70,6 @@ let elections = [];
 let activeElection = null;
 let activeElectionDetail = null;
 let dashboardAttendees = [];
-
-function switchView(viewName) {
-  const target = viewName || 'attendance';
-  viewTabs.forEach((tab) => {
-    const active = tab.dataset.view === target;
-    tab.classList.toggle('active', active);
-    tab.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
-  workspaces.forEach((workspace) => {
-    workspace.classList.toggle('active', workspace.id === `${target}-view`);
-  });
-  window.localStorage.setItem(ACTIVE_VIEW_KEY, target);
-}
 
 function getApiUrl() {
   const config = window.AttendanceConfig || {};
@@ -99,6 +105,17 @@ function activeElectionId() {
 function requireActiveElection() {
   if (activeElectionId()) return true;
   setStatus('warning', 'No election selected', 'Create or select an election before marking attendance.');
+  return false;
+}
+
+function canTakeAttendance() {
+  return activeElection && ATTENDANCE_STATUSES.has(activeElection.status);
+}
+
+function requireAttendanceOpen() {
+  if (!requireActiveElection()) return false;
+  if (canTakeAttendance()) return true;
+  setStatus('warning', 'Attendance not open', 'Start attendance before scanning or adding people.');
   return false;
 }
 
@@ -141,11 +158,14 @@ async function loadElections() {
 function renderElectionSelect() {
   if (!elections.length) {
     electionSelect.innerHTML = '<option value="">No elections yet</option>';
+    createElectionPanel.open = true;
+    activeElectionView.hidden = true;
     return;
   }
   electionSelect.innerHTML = elections.map((election) => `
     <option value="${escapeHtml(election.id)}">${escapeHtml(election.title)} (${escapeHtml(labelize(election.status))})</option>
   `).join('');
+  activeElectionView.hidden = false;
 }
 
 async function selectInitialElection() {
@@ -154,7 +174,7 @@ async function selectInitialElection() {
     activeElectionDetail = null;
     renderQuestions();
     renderEmptyDashboard();
-    switchView('setup');
+    renderElectionStage();
     return;
   }
 
@@ -170,7 +190,32 @@ async function loadElectionDetail(electionId) {
   activeElection = activeElectionDetail;
   window.localStorage.setItem(ACTIVE_ELECTION_KEY, electionId);
   renderQuestions();
+  renderElectionStage();
   await loadDashboard();
+}
+
+function renderElectionStage() {
+  const status = activeElection ? activeElection.status : '';
+  const currentIndex = Math.max(0, ELECTION_FLOW.findIndex((stage) => stage.status === status));
+  selectedElectionTitleElement.textContent = activeElection ? activeElection.title : 'Select an election';
+  activeElectionStatusElement.textContent = activeElection ? labelize(status) : '-';
+  stageListElement.innerHTML = ELECTION_FLOW.map((stage, index) => {
+    const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : '';
+    return `<span class="stage-step ${state}">${escapeHtml(stage.label)}</span>`;
+  }).join('');
+
+  const action = STAGE_ACTIONS[status];
+  stageActionButton.hidden = !action;
+  if (action) {
+    const quorumBlocked = action.requiresQuorum && activeElection && !activeElection.quorum_reached;
+    stageActionButton.textContent = quorumBlocked ? 'Quorum Required' : action.label;
+    stageActionButton.disabled = Boolean(quorumBlocked);
+  }
+
+  const setupStatus = status === 'draft' || !activeElection;
+  createElectionPanel.open = !activeElection;
+  questionPanel.open = setupStatus;
+  activeElectionView.classList.toggle('is-draft', status === 'draft');
 }
 
 function renderQuestions() {
@@ -238,6 +283,7 @@ function renderDashboard(data) {
     : 'Quorum not reached yet.';
   quorumStatusElement.className = `quorum-status ${election && election.quorum_reached ? 'success-text' : ''}`;
   renderAttendees();
+  renderElectionStage();
   dashboardUpdatedElement.textContent = `Updated ${formatTime(new Date())}`;
 }
 
@@ -307,7 +353,8 @@ async function createElection(event) {
     await loadElections();
     electionSelect.value = election.id;
     await loadElectionDetail(election.id);
-    switchView('questions');
+    createElectionPanel.open = false;
+    questionPanel.open = true;
   } catch (error) {
     setStatus('error', 'Could not create election', error.message || 'Please try again.');
   }
@@ -347,13 +394,40 @@ async function addQuestion(event) {
   }
 }
 
+async function advanceElectionStage() {
+  if (!activeElection) return;
+  const action = STAGE_ACTIONS[activeElection.status];
+  if (!action) return;
+  if (action.requiresQuorum && !activeElection.quorum_reached) {
+    setStatus('warning', 'Quorum not reached', 'Voting can open after quorum is reached.');
+    return;
+  }
+
+  const electionId = activeElection.id;
+  stageActionButton.disabled = true;
+  try {
+    await apiRequest(`/api/elections/${encodeURIComponent(electionId)}/status`, {
+      method: 'POST',
+      body: JSON.stringify({ status: action.nextStatus }),
+    });
+    await loadElections();
+    electionSelect.value = electionId;
+    await loadElectionDetail(electionId);
+    setStatus('success', labelize(action.nextStatus), 'Election stage updated.');
+  } catch (error) {
+    setStatus('error', 'Could not update stage', error.message || 'Please try again.');
+  } finally {
+    stageActionButton.disabled = false;
+  }
+}
+
 async function toggleScanner() {
   if (scanning) {
     await stopScanner();
     return;
   }
 
-  if (!requireActiveElection()) return;
+  if (!requireAttendanceOpen()) return;
 
   if (!window.Html5Qrcode) {
     setStatus('error', 'Scanner unavailable', 'The QR scanner library did not load. Please refresh and try again.');
@@ -404,7 +478,7 @@ async function onScanSuccess(decodedText) {
 
 async function scanFile(file) {
   if (!file) return;
-  if (!requireActiveElection()) return;
+  if (!requireAttendanceOpen()) return;
 
   if (!window.Html5Qrcode) {
     setStatus('error', 'Upload unavailable', 'The QR scanner library did not load. Please refresh and try again.');
@@ -437,7 +511,7 @@ function submitManual() {
 }
 
 async function submitQr(qrRawData, method) {
-  if (submitting || !requireActiveElection()) return;
+  if (submitting || !requireAttendanceOpen()) return;
 
   submitting = true;
   setStatus('', 'Marking attendance', 'Checking Resident Master in Postgres.');
@@ -463,7 +537,7 @@ async function submitQr(qrRawData, method) {
 
 async function submitManualAttendance(event) {
   event.preventDefault();
-  if (submitting || !requireActiveElection()) return;
+  if (submitting || !requireAttendanceOpen()) return;
 
   const userId = manualUserIdInput.value.trim();
   const houseId = manualHouseIdInput.value.trim();
@@ -554,14 +628,11 @@ attendeeSearchInput.addEventListener('input', renderAttendees);
 electionForm.addEventListener('submit', createElection);
 questionForm.addEventListener('submit', addQuestion);
 electionSelect.addEventListener('change', () => loadElectionDetail(electionSelect.value));
-viewTabs.forEach((tab) => {
-  tab.addEventListener('click', () => switchView(tab.dataset.view));
-});
+stageActionButton.addEventListener('click', advanceElectionStage);
 manualInput.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     submitManual();
   }
 });
 
-switchView(window.localStorage.getItem(ACTIVE_VIEW_KEY) || 'attendance');
 loadElections();

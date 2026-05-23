@@ -6,18 +6,16 @@
     <title>Nambiar Bellezea Elections</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260523-7" defer></script>
-    <script src="app.js?v=20260523-7" defer></script>
+    <script src="config.js?v=20260523-8" defer></script>
+    <script src="app.js?v=20260523-8" defer></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="app-header">
-        <div>
-          <h1 id="page-title">Nambiar Bellezea Elections</h1>
-        </div>
+        <h1 id="page-title">Nambiar Bellezea Elections</h1>
         <div class="top-controls">
           <label class="active-election-control">
-            <span>Active election</span>
+            <span>Election</span>
             <select id="election-select"></select>
           </label>
           <button id="refresh-elections" class="icon-button" type="button" aria-label="Refresh elections">
@@ -28,228 +26,225 @@
         </div>
       </header>
 
-      <section class="command-strip" aria-label="Election status">
-        <div>
-          <span>Status</span>
-          <strong id="active-election-status">-</strong>
-        </div>
-        <div>
-          <span>Quorum</span>
-          <strong id="header-quorum">-</strong>
-        </div>
-        <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
-      </section>
-
-      <nav class="view-tabs" aria-label="Officer workflows">
-        <button class="view-tab active" type="button" data-view="attendance">Attendance</button>
-        <button class="view-tab" type="button" data-view="setup">Setup</button>
-        <button class="view-tab" type="button" data-view="questions">Questions</button>
-      </nav>
-
-      <section id="attendance-view" class="workspace active" aria-label="Attendance workflow">
-        <section class="pane attendance-pane" aria-label="Take attendance">
-          <div class="pane-head">
-            <h2>Take Attendance</h2>
-          </div>
-
-          <ol class="scan-steps" aria-label="MyGate QR steps">
-            <li>Open your MyGate app</li>
-            <li>Press your profile icon on top right</li>
-            <li>Press your QR code next to MyGate ID and scan here</li>
-          </ol>
-
-          <div class="actions">
-            <button id="scan-button" class="primary" type="button">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-              <span>Scan QR</span>
-            </button>
-
-            <label class="file-button" for="qr-file">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 16V4m0 0 4 4m-4-4-4 4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <span>Upload QR</span>
-            </label>
-            <input id="qr-file" type="file" accept="image/*">
-          </div>
-
-          <div id="qr-reader" aria-live="polite"></div>
-
-          <div class="manual">
-            <label for="manual-text">Paste QR text or passcode</label>
-            <div class="manual-row">
-              <textarea id="manual-text" rows="1" autocomplete="one-time-code" inputmode="numeric"></textarea>
-              <button id="manual-button" class="secondary" type="button">Submit</button>
-            </div>
-          </div>
-
-          <form id="manual-attendance-form" class="stacked-form compact-form">
-            <h3>Manual Attendance</h3>
-            <div class="form-grid two">
-              <label>
-                <span>User ID</span>
-                <input id="manual-user-id" type="text" autocomplete="off">
-              </label>
-              <label>
-                <span>House ID</span>
-                <input id="manual-house-id" type="text" autocomplete="off">
-              </label>
-            </div>
+      <details id="create-election-panel" class="drawer-panel">
+        <summary>Create Election</summary>
+        <form id="election-form" class="drawer-form">
+          <label>
+            <span>Title</span>
+            <input id="election-title" type="text" autocomplete="off" required>
+          </label>
+          <label>
+            <span>Description</span>
+            <textarea id="election-description" rows="2"></textarea>
+          </label>
+          <div class="form-grid two">
             <label>
-              <span>Name</span>
-              <input id="manual-name" type="text" autocomplete="off">
-            </label>
-            <button class="secondary" type="submit">Add Manually</button>
-          </form>
-
-          <div id="status" class="status" role="status" aria-live="polite">
-            <p class="status-title">Ready</p>
-            <p class="status-copy">Select an election, then scan or add attendance.</p>
-          </div>
-        </section>
-
-        <section class="pane summary-pane" aria-label="Villa representation summary">
-          <div class="pane-head">
-            <h2>Quorum</h2>
-            <button id="refresh-dashboard" class="icon-button" type="button" aria-label="Refresh dashboard">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </button>
-          </div>
-
-          <div class="summary-grid">
-            <div class="metric-block">
-              <span>Total Villas</span>
-              <strong id="total-villas">-</strong>
-            </div>
-            <div class="metric-block">
-              <span>Represented</span>
-              <strong id="represented-villas">-</strong>
-            </div>
-            <div class="metric-block">
-              <span>Representation</span>
-              <strong id="representation-pct">-</strong>
-            </div>
-            <div class="metric-block">
-              <span>Quorum Required</span>
-              <strong id="quorum-required">-</strong>
-            </div>
-          </div>
-
-          <div class="progress-track" aria-hidden="true">
-            <div id="representation-bar" class="progress-bar"></div>
-          </div>
-          <p id="quorum-status" class="quorum-status">Select an election to view quorum.</p>
-
-          <div class="attendees-block">
-            <div class="pane-head compact-head">
-              <h2>Attendees</h2>
-              <span id="attendee-count" class="count-pill">0</span>
-            </div>
-            <div class="attendee-search">
-              <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
-            </div>
-            <div id="attendee-list" class="attendee-list" role="list">
-              <p class="empty-list">No attendance marked yet.</p>
-            </div>
-          </div>
-        </section>
-      </section>
-
-      <section id="setup-view" class="workspace setup-workspace" aria-label="Election setup workflow">
-        <section class="pane setup-pane">
-          <div class="pane-head">
-            <h2>Create Election</h2>
-          </div>
-
-          <form id="election-form" class="stacked-form plain-form">
-            <label>
-              <span>Title</span>
-              <input id="election-title" type="text" autocomplete="off" required>
+              <span>Quorum %</span>
+              <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
             </label>
             <label>
-              <span>Description</span>
-              <textarea id="election-description" rows="2"></textarea>
+              <span>Status</span>
+              <select id="election-status">
+                <option value="draft">Draft</option>
+                <option value="attendance_open">Attendance open</option>
+                <option value="discussion">Discussion</option>
+                <option value="voting_open">Voting open</option>
+                <option value="voting_closed">Voting closed</option>
+                <option value="results_published">Results published</option>
+              </select>
             </label>
-            <div class="form-grid two">
-              <label>
-                <span>Quorum %</span>
-                <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
-              </label>
-              <label>
-                <span>Status</span>
-                <select id="election-status">
-                  <option value="draft">Draft</option>
-                  <option value="attendance_open">Attendance open</option>
-                  <option value="discussion">Discussion</option>
-                  <option value="voting_open">Voting open</option>
-                  <option value="voting_closed">Voting closed</option>
-                  <option value="results_published">Results published</option>
-                </select>
-              </label>
-            </div>
-            <label class="check-row">
-              <input id="include-defaulters-quorum" type="checkbox">
-              <span>Count defaulters in quorum</span>
-            </label>
-            <label class="check-row">
-              <input id="allow-defaulters-vote" type="checkbox">
-              <span>Allow defaulters to vote</span>
-            </label>
-            <button class="primary" type="submit">Create Election</button>
-          </form>
-        </section>
-      </section>
-
-      <section id="questions-view" class="workspace questions-workspace" aria-label="Question workflow">
-        <section class="pane question-pane">
-          <div class="pane-head">
-            <h2>Add Question</h2>
           </div>
+          <label class="check-row">
+            <input id="include-defaulters-quorum" type="checkbox">
+            <span>Count defaulters in quorum</span>
+          </label>
+          <label class="check-row">
+            <input id="allow-defaulters-vote" type="checkbox">
+            <span>Allow defaulters to vote</span>
+          </label>
+          <button class="primary" type="submit">Create Election</button>
+        </form>
+      </details>
 
-          <form id="question-form" class="stacked-form plain-form">
-            <label>
-              <span>Question</span>
-              <textarea id="question-text" rows="2" required></textarea>
-            </label>
-            <div class="form-grid two">
-              <label>
-                <span>Choice 1</span>
-                <input id="choice-one" type="text" autocomplete="off" required>
-              </label>
-              <label>
-                <span>Choice 2</span>
-                <input id="choice-two" type="text" autocomplete="off" required>
-              </label>
+      <section id="active-election-view" class="active-election-view">
+        <section class="stage-panel" aria-label="Election stage">
+          <div class="stage-heading">
+            <div>
+              <span id="active-election-status" class="status-pill">-</span>
+              <h2 id="selected-election-title">Select an election</h2>
             </div>
-            <div class="form-grid two">
-              <label>
-                <span>Passing rule</span>
-                <select id="passing-rule">
-                  <option value="simple_majority">Simple majority</option>
-                  <option value="two_thirds">Two-thirds</option>
-                  <option value="custom_threshold">Custom threshold</option>
-                </select>
-              </label>
-              <label>
-                <span>Custom %</span>
-                <input id="passing-threshold" type="number" min="0" max="100" step="0.1" placeholder="Optional">
-              </label>
+            <div class="stage-actions">
+              <strong id="header-quorum">-</strong>
+              <button id="stage-action-button" class="primary" type="button">Next Stage</button>
             </div>
-            <button class="primary" type="submit">Add Question</button>
-          </form>
+          </div>
+          <div id="stage-list" class="stage-list" aria-label="Election lifecycle"></div>
+          <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
         </section>
 
-        <section class="pane question-list-pane">
-          <div class="pane-head">
-            <h2>Questions</h2>
-          </div>
-          <div id="question-list" class="question-list">
-            <p class="empty-list">Select or create an election to manage questions.</p>
-          </div>
+        <details id="question-panel" class="drawer-panel">
+          <summary>Questions</summary>
+          <section class="questions-workspace" aria-label="Question workflow">
+            <section class="pane question-pane">
+              <div class="pane-head">
+                <h2>Add Question</h2>
+              </div>
+
+              <form id="question-form" class="drawer-form">
+                <label>
+                  <span>Question</span>
+                  <textarea id="question-text" rows="2" required></textarea>
+                </label>
+                <div class="form-grid two">
+                  <label>
+                    <span>Choice 1</span>
+                    <input id="choice-one" type="text" autocomplete="off" required>
+                  </label>
+                  <label>
+                    <span>Choice 2</span>
+                    <input id="choice-two" type="text" autocomplete="off" required>
+                  </label>
+                </div>
+                <div class="form-grid two">
+                  <label>
+                    <span>Passing rule</span>
+                    <select id="passing-rule">
+                      <option value="simple_majority">Simple majority</option>
+                      <option value="two_thirds">Two-thirds</option>
+                      <option value="custom_threshold">Custom threshold</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Custom %</span>
+                    <input id="passing-threshold" type="number" min="0" max="100" step="0.1" placeholder="Optional">
+                  </label>
+                </div>
+                <button class="primary" type="submit">Add Question</button>
+              </form>
+            </section>
+
+            <section class="pane question-list-pane">
+              <div class="pane-head">
+                <h2>Questions</h2>
+              </div>
+              <div id="question-list" class="question-list">
+                <p class="empty-list">Select or create an election to manage questions.</p>
+              </div>
+            </section>
+          </section>
+        </details>
+
+        <section class="meeting-grid" aria-label="Meeting operations">
+          <section class="pane attendance-pane" aria-label="Take attendance">
+            <div class="pane-head">
+              <h2>Take Attendance</h2>
+            </div>
+
+            <ol class="scan-steps" aria-label="MyGate QR steps">
+              <li>Open your MyGate app</li>
+              <li>Press your profile icon on top right</li>
+              <li>Press your QR code next to MyGate ID and scan here</li>
+            </ol>
+
+            <div class="actions">
+              <button id="scan-button" class="primary" type="button">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span>Scan QR</span>
+              </button>
+
+              <label class="file-button" for="qr-file">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 16V4m0 0 4 4m-4-4-4 4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>Upload QR</span>
+              </label>
+              <input id="qr-file" type="file" accept="image/*">
+            </div>
+
+            <div id="qr-reader" aria-live="polite"></div>
+
+            <div class="manual">
+              <label for="manual-text">Paste QR text or passcode</label>
+              <div class="manual-row">
+                <textarea id="manual-text" rows="1" autocomplete="one-time-code" inputmode="numeric"></textarea>
+                <button id="manual-button" class="secondary" type="button">Submit</button>
+              </div>
+            </div>
+
+            <form id="manual-attendance-form" class="stacked-form compact-form">
+              <h3>Manual Attendance</h3>
+              <div class="form-grid two">
+                <label>
+                  <span>User ID</span>
+                  <input id="manual-user-id" type="text" autocomplete="off">
+                </label>
+                <label>
+                  <span>House ID</span>
+                  <input id="manual-house-id" type="text" autocomplete="off">
+                </label>
+              </div>
+              <label>
+                <span>Name</span>
+                <input id="manual-name" type="text" autocomplete="off">
+              </label>
+              <button class="secondary" type="submit">Add Manually</button>
+            </form>
+
+            <div id="status" class="status" role="status" aria-live="polite">
+              <p class="status-title">Ready</p>
+              <p class="status-copy">Select an election, then scan or add attendance.</p>
+            </div>
+          </section>
+
+          <section class="pane summary-pane" aria-label="Villa representation summary">
+            <div class="pane-head">
+              <h2>Quorum</h2>
+              <button id="refresh-dashboard" class="icon-button" type="button" aria-label="Refresh dashboard">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+
+            <div class="summary-grid">
+              <div class="metric-block">
+                <span>Total Villas</span>
+                <strong id="total-villas">-</strong>
+              </div>
+              <div class="metric-block">
+                <span>Represented</span>
+                <strong id="represented-villas">-</strong>
+              </div>
+              <div class="metric-block">
+                <span>Representation</span>
+                <strong id="representation-pct">-</strong>
+              </div>
+              <div class="metric-block">
+                <span>Quorum Required</span>
+                <strong id="quorum-required">-</strong>
+              </div>
+            </div>
+
+            <div class="progress-track" aria-hidden="true">
+              <div id="representation-bar" class="progress-bar"></div>
+            </div>
+            <p id="quorum-status" class="quorum-status">Select an election to view quorum.</p>
+
+            <div class="attendees-block">
+              <div class="pane-head compact-head">
+                <h2>Attendees</h2>
+                <span id="attendee-count" class="count-pill">0</span>
+              </div>
+              <div class="attendee-search">
+                <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
+              </div>
+              <div id="attendee-list" class="attendee-list" role="list">
+                <p class="empty-list">No attendance marked yet.</p>
+              </div>
+            </div>
+          </section>
         </section>
       </section>
     </main>

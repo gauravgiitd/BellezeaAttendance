@@ -115,49 +115,131 @@ h2 {
   font-size: 1rem;
 }
 
-.view-tabs {
-  display: inline-grid;
-  grid-template-columns: repeat(3, minmax(120px, 1fr));
-  gap: 4px;
-  margin-bottom: 16px;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+.active-election-view {
+  display: grid;
+  gap: 16px;
 }
 
-.view-tab {
-  min-height: 40px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-}
-
-.view-tab.active {
-  background: var(--brand);
-  color: #fff;
-}
-
-.workspace {
+.active-election-view[hidden] {
   display: none;
 }
 
-.workspace.active {
-  display: grid;
-  gap: 16px;
+.stage-panel,
+.drawer-panel {
+  background: var(--panel);
+  border: 1px solid rgba(130, 144, 166, 0.28);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.stage-panel {
+  padding: 18px;
+}
+
+.stage-heading {
+  display: flex;
   align-items: start;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-#attendance-view {
-  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+.stage-heading h2 {
+  margin-top: 8px;
+  font-size: clamp(1.35rem, 3vw, 2rem);
 }
 
-.setup-workspace {
-  grid-template-columns: minmax(360px, 720px);
+.stage-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.stage-actions strong {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.stage-list {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.stage-step {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.stage-step.done {
+  border-color: rgba(6, 118, 71, 0.24);
+  color: var(--success);
+  background: #ecfdf3;
+}
+
+.stage-step.current {
+  border-color: var(--brand);
+  color: #fff;
+  background: var(--brand);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: var(--brand-strong);
+  background: #e6f4f0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.drawer-panel {
+  padding: 0;
+}
+
+.drawer-panel summary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.drawer-form,
+.questions-workspace {
+  padding: 0 18px 18px;
+}
+
+.drawer-form {
+  display: grid;
+  gap: 12px;
 }
 
 .questions-workspace {
+  display: grid;
   grid-template-columns: minmax(360px, 0.9fr) minmax(360px, 1.1fr);
+  gap: 16px;
+}
+
+.meeting-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+  gap: 16px;
+  align-items: start;
 }
 
 .pane {
@@ -651,7 +733,7 @@ select:focus {
 }
 
 @media (max-width: 1080px) {
-  #attendance-view,
+  .meeting-grid,
   .questions-workspace {
     grid-template-columns: 1fr 1fr;
   }
@@ -676,13 +758,19 @@ select:focus {
     text-align: left;
   }
 
-  .view-tabs {
-    width: 100%;
-    grid-template-columns: 1fr;
+  .stage-heading {
+    display: grid;
   }
 
-  #attendance-view,
-  .setup-workspace,
+  .stage-actions {
+    justify-items: stretch;
+  }
+
+  .stage-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .meeting-grid,
   .questions-workspace,
   .actions,
   .manual-row,
