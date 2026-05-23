@@ -101,6 +101,20 @@ h2 {
   gap: 12px;
 }
 
+.scan-steps {
+  margin: 0 0 16px;
+  padding: 12px 12px 12px 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.scan-steps li + li {
+  margin-top: 6px;
+}
+
 button,
 .file-button {
   min-height: 48px;
