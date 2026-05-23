@@ -177,7 +177,7 @@ h2 {
 
 .stage-list {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 16px;
 }
@@ -333,6 +333,31 @@ h3 {
 
 .form-grid.two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lifecycle-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--soft);
+}
+
+.lifecycle-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.lifecycle-card strong {
+  font-size: 1.15rem;
+}
+
+.lifecycle-card small {
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 label {
@@ -820,6 +845,40 @@ select:focus {
   display: block;
   margin-top: 3px;
   color: var(--muted);
+}
+
+.rules-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+  border: 1px solid rgba(130, 144, 166, 0.28);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.rules-strip strong {
+  color: var(--ink);
+}
+
+.rules-strip span {
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.question-card-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.hidden {
+  display: none !important;
 }
 
 @media (max-width: 1080px) {

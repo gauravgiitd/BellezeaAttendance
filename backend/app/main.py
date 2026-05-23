@@ -70,6 +70,15 @@ class QuestionCreate(BaseModel):
     choices: list[QuestionChoiceCreate] = Field(min_length=2)
 
 
+class QuestionUpdate(BaseModel):
+    question_text: str = Field(min_length=1)
+    image_url: str | None = None
+    passing_rule: str = "simple_majority"
+    passing_threshold_percent: Decimal | None = None
+    display_order: int = 0
+    choices: list[QuestionChoiceCreate] = Field(min_length=2)
+
+
 class ProxyCreate(BaseModel):
     election_id: str | None = None
     grantor_house_id: str
@@ -138,6 +147,13 @@ ELECTION_STATUSES = {
 
 ATTENDANCE_METHODS = {"qr_scan", "qr_upload", "manual"}
 PASSING_RULES = {"simple_majority", "two_thirds", "custom_threshold"}
+RUN_STATUS_TRANSITIONS = {
+    "draft": {"attendance_open"},
+    "attendance_open": {"voting_open"},
+    "discussion": {"voting_open"},
+    "voting_open": {"voting_closed"},
+}
+ATTENDANCE_OPEN_STATUSES = {"attendance_open", "discussion"}
 
 
 def validate_choice(value: str, allowed: set[str], label: str) -> str:
@@ -339,6 +355,47 @@ def fetch_questions(cur, election_id: str) -> list[dict[str, Any]]:
     return list(questions.values())
 
 
+def ensure_election_config_editable(cur, election_id: str) -> dict[str, Any]:
+    cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
+    election = cur.fetchone()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+    if election["status"] != "draft":
+        raise HTTPException(status_code=409, detail="Election setup is locked after attendance starts")
+    return election
+
+
+def ensure_proxy_editable(cur, election_id: str | None) -> None:
+    if not election_id:
+        return
+    cur.execute("SELECT status FROM elections WHERE id = %s", (election_id,))
+    election = cur.fetchone()
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+    if election["status"] not in {"draft", "attendance_open", "discussion"}:
+        raise HTTPException(status_code=409, detail="Proxy changes are locked after voting starts")
+
+
+def ensure_status_transition_allowed(cur, election_id: str, next_status: str) -> dict[str, Any]:
+    election = fetch_election_summary(cur, election_id)
+    if not election:
+        raise HTTPException(status_code=404, detail="Election not found")
+
+    current_status = election["status"]
+    if next_status == current_status:
+        return election
+    if next_status not in RUN_STATUS_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(status_code=409, detail=f"Cannot move election from {current_status} to {next_status}")
+
+    if current_status == "draft" and next_status == "attendance_open":
+        cur.execute("SELECT COUNT(*) AS question_count FROM election_questions WHERE election_id = %s", (election_id,))
+        if not cur.fetchone()["question_count"]:
+            raise HTTPException(status_code=409, detail="Add at least one question before starting attendance")
+    if next_status == "voting_open" and not election_public(election)["quorum_reached"]:
+        raise HTTPException(status_code=409, detail="Quorum must be reached before voting opens")
+    return election
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     if os.environ.get("AUTO_MIGRATE", "true").lower() not in {"0", "false", "no"}:
@@ -489,6 +546,7 @@ def get_election(election_id: str) -> dict[str, Any]:
 def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]:
     with connection() as conn:
         with conn.cursor() as cur:
+            ensure_election_config_editable(cur, election_id)
             cur.execute(
                 """
                 UPDATE elections
@@ -522,6 +580,7 @@ def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]
 def delete_election(election_id: str) -> dict[str, str]:
     with connection() as conn:
         with conn.cursor() as cur:
+            ensure_election_config_editable(cur, election_id)
             cur.execute("DELETE FROM elections WHERE id = %s RETURNING id", (election_id,))
             deleted = cur.fetchone()
         conn.commit()
@@ -535,9 +594,7 @@ def add_question(election_id: str, payload: QuestionCreate) -> dict[str, Any]:
     passing_rule = validate_choice(payload.passing_rule, PASSING_RULES, "passing rule")
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id FROM elections WHERE id = %s", (election_id,))
-            if not cur.fetchone():
-                raise HTTPException(status_code=404, detail="Election not found")
+            ensure_election_config_editable(cur, election_id)
             cur.execute(
                 """
                 INSERT INTO election_questions (
@@ -577,11 +634,84 @@ def add_question(election_id: str, payload: QuestionCreate) -> dict[str, Any]:
     return next(item for item in questions if item["id"] == str(question["id"]))
 
 
+@app.patch("/api/elections/{election_id}/questions/{question_id}")
+def update_question(election_id: str, question_id: str, payload: QuestionUpdate) -> dict[str, Any]:
+    passing_rule = validate_choice(payload.passing_rule, PASSING_RULES, "passing rule")
+    with connection() as conn:
+        with conn.cursor() as cur:
+            ensure_election_config_editable(cur, election_id)
+            cur.execute(
+                """
+                UPDATE election_questions
+                SET question_text = %s,
+                    image_url = %s,
+                    passing_rule = %s,
+                    passing_threshold_percent = %s,
+                    display_order = %s,
+                    updated_at = now()
+                WHERE id = %s AND election_id = %s
+                RETURNING id
+                """,
+                (
+                    clean(payload.question_text),
+                    clean(payload.image_url),
+                    passing_rule,
+                    payload.passing_threshold_percent,
+                    payload.display_order,
+                    question_id,
+                    election_id,
+                ),
+            )
+            question = cur.fetchone()
+            if not question:
+                raise HTTPException(status_code=404, detail="Question not found")
+            cur.execute("DELETE FROM election_choices WHERE question_id = %s", (question_id,))
+            for index, choice in enumerate(payload.choices):
+                cur.execute(
+                    """
+                    INSERT INTO election_choices (question_id, choice_text, image_url, display_order)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        question_id,
+                        clean(choice.choice_text),
+                        clean(choice.image_url),
+                        choice.display_order or index,
+                    ),
+                )
+        conn.commit()
+    with connection() as conn:
+        with conn.cursor() as cur:
+            questions = fetch_questions(cur, election_id)
+    return next(item for item in questions if item["id"] == question_id)
+
+
+@app.delete("/api/elections/{election_id}/questions/{question_id}")
+def delete_question(election_id: str, question_id: str) -> dict[str, str]:
+    with connection() as conn:
+        with conn.cursor() as cur:
+            ensure_election_config_editable(cur, election_id)
+            cur.execute(
+                """
+                DELETE FROM election_questions
+                WHERE id = %s AND election_id = %s
+                RETURNING id
+                """,
+                (question_id, election_id),
+            )
+            deleted = cur.fetchone()
+        conn.commit()
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Question not found")
+    return {"status": "deleted"}
+
+
 @app.post("/api/elections/{election_id}/status")
 def update_election_status(election_id: str, payload: ElectionStatusUpdate) -> dict[str, Any]:
     status = validate_choice(payload.status, ELECTION_STATUSES, "election status")
     with connection() as conn:
         with conn.cursor() as cur:
+            ensure_status_transition_allowed(cur, election_id, status)
             cur.execute(
                 """
                 UPDATE elections
@@ -679,6 +809,7 @@ def attendance_dashboard(election_id: str) -> dict[str, Any]:
 def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
     with connection() as conn:
         with conn.cursor() as cur:
+            ensure_proxy_editable(cur, payload.election_id)
             cur.execute("SELECT house_id FROM villas WHERE house_id = %s", (normalize_id(payload.grantor_house_id),))
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Grantor villa was not found")
@@ -767,6 +898,11 @@ def list_proxies(election_id: str | None = None) -> list[dict[str, Any]]:
 def cancel_proxy(proxy_id: str) -> dict[str, str]:
     with connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT election_id FROM proxies WHERE id = %s", (proxy_id,))
+            proxy = cur.fetchone()
+            if not proxy:
+                raise HTTPException(status_code=404, detail="Proxy not found")
+            ensure_proxy_editable(cur, str(proxy["election_id"]) if proxy["election_id"] else None)
             cur.execute(
                 """
                 UPDATE proxies SET status = 'cancelled', updated_at = now()
@@ -775,9 +911,9 @@ def cancel_proxy(proxy_id: str) -> dict[str, str]:
                 """,
                 (proxy_id,),
             )
-            proxy = cur.fetchone()
+            cancelled = cur.fetchone()
         conn.commit()
-    if not proxy:
+    if not cancelled:
         raise HTTPException(status_code=404, detail="Proxy not found")
     return {"status": "cancelled"}
 
@@ -935,6 +1071,8 @@ def mark_attendance(
             election = cur.fetchone()
             if not election:
                 raise HTTPException(status_code=404, detail="Election not found")
+            if election["status"] not in ATTENDANCE_OPEN_STATUSES:
+                raise HTTPException(status_code=409, detail="Attendance can be marked only during the Attendance stage")
 
             resident = find_resident_for_attendance(cur, passcode=passcode, user_id=user_id, house_id=house_id, name=name)
             if not resident:

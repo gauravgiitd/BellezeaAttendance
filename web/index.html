@@ -6,8 +6,8 @@
     <title>Nambiar Bellezea Elections</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260523-9" defer></script>
-    <script src="app.js?v=20260523-9" defer></script>
+    <script src="config.js?v=20260523-10" defer></script>
+    <script src="app.js?v=20260523-10" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -33,6 +33,13 @@
       </section>
 
       <section id="manage-view" class="app-view active" aria-label="Manage elections">
+        <section class="rules-strip" aria-label="Election lifecycle rules">
+          <strong>Lifecycle rules</strong>
+          <span>Create the election package here: details, quorum, questions, and proxies.</span>
+          <span>Details, questions, and deletion lock once attendance starts.</span>
+          <span>Proxies stay editable during Attendance and lock when Voting opens.</span>
+        </section>
+
         <section class="manage-grid">
           <section class="pane config-pane">
             <div class="pane-head">
@@ -41,6 +48,11 @@
             </div>
 
             <form id="election-form" class="drawer-form">
+              <div class="lifecycle-card">
+                <span>Current lifecycle</span>
+                <strong id="manage-election-lifecycle">Draft</strong>
+                <small id="manage-lock-copy">Start attendance from Run Election after the election package is ready.</small>
+              </div>
               <label>
                 <span>Title</span>
                 <input id="election-title" type="text" autocomplete="off" required>
@@ -49,23 +61,10 @@
                 <span>Description</span>
                 <textarea id="election-description" rows="2"></textarea>
               </label>
-              <div class="form-grid two">
-                <label>
-                  <span>Quorum %</span>
-                  <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
-                </label>
-                <label>
-                  <span>Status</span>
-                  <select id="election-status">
-                    <option value="draft">Draft</option>
-                    <option value="attendance_open">Attendance open</option>
-                    <option value="discussion">Discussion</option>
-                    <option value="voting_open">Voting open</option>
-                    <option value="voting_closed">Voting closed</option>
-                    <option value="results_published">Results published</option>
-                  </select>
-                </label>
-              </div>
+              <label>
+                <span>Quorum %</span>
+                <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
+              </label>
               <label class="check-row">
                 <input id="include-defaulters-quorum" type="checkbox">
                 <span>Count defaulters in quorum</span>
@@ -118,6 +117,10 @@
                 </label>
               </div>
               <button class="secondary" type="submit">Add Question</button>
+              <div id="question-edit-actions" class="button-row hidden">
+                <button id="cancel-question-edit-button" class="secondary" type="button">Cancel Edit</button>
+                <button id="delete-question-button" class="danger-button" type="button">Delete Question</button>
+              </div>
             </form>
 
             <div id="question-list" class="question-list">

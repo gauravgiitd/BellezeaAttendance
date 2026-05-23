@@ -25,7 +25,6 @@ const electionForm = document.querySelector('#election-form');
 const electionTitleInput = document.querySelector('#election-title');
 const electionDescriptionInput = document.querySelector('#election-description');
 const electionQuorumInput = document.querySelector('#election-quorum');
-const electionStatusSelect = document.querySelector('#election-status');
 const includeDefaultersQuorumInput = document.querySelector('#include-defaulters-quorum');
 const allowDefaultersVoteInput = document.querySelector('#allow-defaulters-vote');
 const questionForm = document.querySelector('#question-form');
@@ -44,6 +43,8 @@ const stageActionButton = document.querySelector('#stage-action-button');
 const modeTabs = Array.from(document.querySelectorAll('.mode-tab'));
 const appViews = Array.from(document.querySelectorAll('.app-view'));
 const manageStatusElement = document.querySelector('#manage-status');
+const manageElectionLifecycleElement = document.querySelector('#manage-election-lifecycle');
+const manageLockCopyElement = document.querySelector('#manage-lock-copy');
 const newElectionButton = document.querySelector('#new-election-button');
 const deleteElectionButton = document.querySelector('#delete-election-button');
 const saveElectionButton = document.querySelector('#save-election-button');
@@ -52,26 +53,25 @@ const proxyGrantorHouseIdInput = document.querySelector('#proxy-grantor-house-id
 const proxyHolderUserIdInput = document.querySelector('#proxy-holder-user-id');
 const proxyNotesInput = document.querySelector('#proxy-notes');
 const proxyListElement = document.querySelector('#proxy-list');
+const questionEditActions = document.querySelector('#question-edit-actions');
+const cancelQuestionEditButton = document.querySelector('#cancel-question-edit-button');
+const deleteQuestionButton = document.querySelector('#delete-question-button');
 
 const DEFAULT_API_URL = 'https://bellezea-elections-api.onrender.com';
 const ACTIVE_ELECTION_KEY = 'bellezea-active-election-id';
 const ACTIVE_MODE_KEY = 'bellezea-officer-mode';
 const ELECTION_FLOW = [
-  { status: 'draft', label: 'Setup' },
   { status: 'attendance_open', label: 'Attendance' },
-  { status: 'discussion', label: 'Discussion' },
   { status: 'voting_open', label: 'Voting' },
   { status: 'voting_closed', label: 'Closed' },
-  { status: 'results_published', label: 'Results' },
 ];
 const STAGE_ACTIONS = {
   draft: { label: 'Start Attendance', nextStatus: 'attendance_open' },
-  attendance_open: { label: 'Start Discussion', nextStatus: 'discussion' },
+  attendance_open: { label: 'Open Voting', nextStatus: 'voting_open', requiresQuorum: true },
   discussion: { label: 'Open Voting', nextStatus: 'voting_open', requiresQuorum: true },
   voting_open: { label: 'Close Voting', nextStatus: 'voting_closed' },
-  voting_closed: { label: 'Publish Results', nextStatus: 'results_published' },
 };
-const ATTENDANCE_STATUSES = new Set(['attendance_open', 'discussion', 'voting_open', 'voting_closed', 'results_published']);
+const ATTENDANCE_STATUSES = new Set(['attendance_open', 'discussion']);
 
 let html5QrCode = null;
 let scanning = false;
@@ -82,6 +82,7 @@ let activeElectionDetail = null;
 let dashboardAttendees = [];
 let proxies = [];
 let editingNewElection = false;
+let editingQuestionId = null;
 
 function getApiUrl() {
   const config = window.AttendanceConfig || {};
@@ -142,11 +143,25 @@ function canTakeAttendance() {
   return activeElection && ATTENDANCE_STATUSES.has(activeElection.status);
 }
 
+function canEditSetup() {
+  return Boolean(activeElection && activeElection.status === 'draft');
+}
+
+function canEditProxies() {
+  return Boolean(activeElection && ['draft', 'attendance_open', 'discussion'].includes(activeElection.status));
+}
+
 function requireAttendanceOpen() {
   if (!requireActiveElection()) return false;
   if (canTakeAttendance()) return true;
   setStatus('warning', 'Attendance not open', 'Start attendance before scanning or adding people.');
   return false;
+}
+
+function setFormDisabled(form, disabled) {
+  Array.from(form.elements).forEach((element) => {
+    element.disabled = disabled;
+  });
 }
 
 async function apiRequest(path, options = {}) {
@@ -230,9 +245,11 @@ async function loadElectionDetail(electionId) {
 
 function renderElectionStage() {
   const status = activeElection ? activeElection.status : '';
-  const currentIndex = Math.max(0, ELECTION_FLOW.findIndex((stage) => stage.status === status));
+  const normalizedStatus = runStageStatus(status);
+  const stageIndex = ELECTION_FLOW.findIndex((stage) => stage.status === normalizedStatus);
+  const currentIndex = stageIndex >= 0 ? stageIndex : 0;
   selectedElectionTitleElement.textContent = activeElection ? activeElection.title : 'Select an election';
-  activeElectionStatusElement.textContent = activeElection ? labelize(status) : '-';
+  activeElectionStatusElement.textContent = activeElection ? runStatusLabel(status) : '-';
   stageListElement.innerHTML = ELECTION_FLOW.map((stage, index) => {
     const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : '';
     return `<span class="stage-step ${state}">${escapeHtml(stage.label)}</span>`;
@@ -247,6 +264,7 @@ function renderElectionStage() {
   }
 
   activeElectionView.classList.toggle('is-draft', status === 'draft');
+  syncManageLocks();
 }
 
 function setElectionFormMode(mode) {
@@ -254,13 +272,20 @@ function setElectionFormMode(mode) {
   if (editingNewElection) {
     electionForm.reset();
     electionQuorumInput.value = '50';
-    electionStatusSelect.value = 'draft';
+    manageElectionLifecycleElement.textContent = 'Draft';
+    manageLockCopyElement.textContent = 'Create the election, add questions, then start attendance from Run Election.';
     deleteElectionButton.disabled = true;
     saveElectionButton.textContent = 'Create Election';
+    setFormDisabled(electionForm, false);
+    setFormDisabled(questionForm, true);
+    setFormDisabled(proxyForm, true);
     setManageStatus('', '');
+    clearQuestionForm();
+    questionListElement.innerHTML = '<p class="empty-list">Create the election before adding questions.</p>';
+    proxyListElement.innerHTML = '<p class="empty-list">Create the election before adding proxies.</p>';
     return;
   }
-  deleteElectionButton.disabled = !activeElection;
+  syncManageLocks();
   saveElectionButton.textContent = 'Save Election';
 }
 
@@ -272,10 +297,40 @@ function populateElectionForm(election) {
   electionTitleInput.value = election.title || '';
   electionDescriptionInput.value = election.description || '';
   electionQuorumInput.value = election.quorum_percent || 50;
-  electionStatusSelect.value = election.status || 'draft';
+  manageElectionLifecycleElement.textContent = runStatusLabel(election.status);
   includeDefaultersQuorumInput.checked = Boolean(election.include_defaulters_in_quorum);
   allowDefaultersVoteInput.checked = Boolean(election.allow_defaulters_to_vote);
   setElectionFormMode('edit');
+}
+
+function syncManageLocks() {
+  if (editingNewElection) return;
+  const setupLocked = activeElection ? !canEditSetup() : true;
+  const proxyLocked = activeElection ? !canEditProxies() : true;
+  setFormDisabled(electionForm, setupLocked);
+  setFormDisabled(questionForm, setupLocked);
+  setFormDisabled(proxyForm, proxyLocked);
+  newElectionButton.disabled = false;
+  deleteElectionButton.disabled = setupLocked || !activeElection;
+  saveElectionButton.disabled = setupLocked;
+  questionEditActions.classList.toggle('hidden', !editingQuestionId);
+  if (!activeElection && !editingNewElection) {
+    manageElectionLifecycleElement.textContent = '-';
+    manageLockCopyElement.textContent = 'Create or select an election to begin.';
+  } else if (activeElection) {
+    manageElectionLifecycleElement.textContent = runStatusLabel(activeElection.status);
+  }
+  if (setupLocked && activeElection) {
+    manageLockCopyElement.textContent = 'Details, questions, and deletion are locked because attendance has started.';
+    setManageStatus('', 'Election details and questions are locked after attendance starts.');
+  } else if (activeElection && canEditSetup()) {
+    manageLockCopyElement.textContent = 'Draft election: details, questions, and deletion are still editable.';
+  }
+  if (proxyLocked && activeElection && activeElection.status !== 'draft') {
+    proxyForm.title = 'Proxy changes are locked after voting starts.';
+  } else {
+    proxyForm.title = '';
+  }
 }
 
 function renderQuestions() {
@@ -294,7 +349,7 @@ function renderQuestions() {
   }
 
   questionListElement.innerHTML = questions.map((question, index) => `
-    <article class="question-card">
+    <article class="question-card" data-question-id="${escapeHtml(question.id)}">
       <div>
         <span class="question-number">Question ${index + 1}</span>
         <strong>${escapeHtml(question.question_text)}</strong>
@@ -302,7 +357,10 @@ function renderQuestions() {
       <ul>
         ${question.choices.map((choice) => `<li>${escapeHtml(choice.choice_text)}</li>`).join('')}
       </ul>
-      <small>${escapeHtml(labelize(question.passing_rule))}</small>
+      <div class="question-card-actions">
+        <small>${escapeHtml(labelize(question.passing_rule))}</small>
+        <button class="secondary small-button" type="button" data-edit-question="${escapeHtml(question.id)}" ${canEditSetup() ? '' : 'disabled'}>Edit</button>
+      </div>
     </article>
   `).join('');
 }
@@ -334,7 +392,7 @@ function renderDashboard(data) {
   representedVillasElement.textContent = formatInt(representedVillas);
   representationPctElement.textContent = `${formatPct(representationPct)}%`;
   quorumRequiredElement.textContent = election ? `${formatPct(election.quorum_percent)}%` : '-';
-  activeElectionStatusElement.textContent = election ? labelize(election.status) : '-';
+  activeElectionStatusElement.textContent = election ? runStatusLabel(election.status) : '-';
   headerQuorumElement.textContent = `${formatPct(representationPct)}% / ${election ? formatPct(election.quorum_percent) : '-'}%`;
   representationBarElement.style.width = `${Math.max(0, Math.min(100, representationPct))}%`;
   attendeeCountElement.textContent = formatInt(attendees.length);
@@ -405,23 +463,11 @@ async function saveElection(event) {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      if (electionStatusSelect.value !== 'draft') {
-        await apiRequest(`/api/elections/${encodeURIComponent(election.id)}/status`, {
-          method: 'POST',
-          body: JSON.stringify({ status: electionStatusSelect.value }),
-        });
-      }
     } else {
       election = await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       });
-      if (electionStatusSelect.value !== activeElection.status) {
-        await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}/status`, {
-          method: 'POST',
-          body: JSON.stringify({ status: electionStatusSelect.value }),
-        });
-      }
     }
 
     setManageStatus('success', editingNewElection ? 'Election created.' : 'Election updated.');
@@ -480,7 +526,7 @@ function renderProxyList() {
         <strong>${escapeHtml(proxy.grantor_house_no || proxy.grantor_house_id)}</strong>
         <small>${escapeHtml(proxy.proxy_holder_name || proxy.proxy_holder_user_id)}${proxy.proxy_holder_house_no ? ` | ${escapeHtml(proxy.proxy_holder_house_no)}` : ''}</small>
       </div>
-      <button class="secondary small-button" type="button" data-cancel-proxy="${escapeHtml(proxy.id)}">Cancel</button>
+      <button class="secondary small-button" type="button" data-cancel-proxy="${escapeHtml(proxy.id)}" ${canEditProxies() ? '' : 'disabled'}>Cancel</button>
     </article>
   `).join('');
 }
@@ -530,28 +576,66 @@ async function addQuestion(event) {
   const choiceTwo = choiceTwoInput.value.trim();
   if (!questionText || !choiceOne || !choiceTwo) return;
 
-  setManageStatus('', 'Adding question...');
+  setManageStatus('', editingQuestionId ? 'Saving question...' : 'Adding question...');
+  const payload = {
+    question_text: questionText,
+    passing_rule: passingRuleSelect.value,
+    passing_threshold_percent: passingRuleSelect.value === 'custom_threshold' && passingThresholdInput.value
+      ? Number(passingThresholdInput.value)
+      : null,
+    choices: [
+      { choice_text: choiceOne, display_order: 1 },
+      { choice_text: choiceTwo, display_order: 2 },
+    ],
+  };
   try {
-    const passingRule = passingRuleSelect.value;
-    await apiRequest(`/api/elections/${encodeURIComponent(activeElectionId())}/questions`, {
-      method: 'POST',
-      body: JSON.stringify({
-        question_text: questionText,
-        passing_rule: passingRule,
-        passing_threshold_percent: passingRule === 'custom_threshold' && passingThresholdInput.value
-          ? Number(passingThresholdInput.value)
-          : null,
-        choices: [
-          { choice_text: choiceOne, display_order: 1 },
-          { choice_text: choiceTwo, display_order: 2 },
-        ],
-      }),
+    const path = editingQuestionId
+      ? `/api/elections/${encodeURIComponent(activeElectionId())}/questions/${encodeURIComponent(editingQuestionId)}`
+      : `/api/elections/${encodeURIComponent(activeElectionId())}/questions`;
+    await apiRequest(path, {
+      method: editingQuestionId ? 'PATCH' : 'POST',
+      body: JSON.stringify(payload),
     });
-    questionForm.reset();
-    setManageStatus('success', 'Question added.');
+    clearQuestionForm();
+    setManageStatus('success', editingQuestionId ? 'Question updated.' : 'Question added.');
     await loadElectionDetail(activeElectionId());
   } catch (error) {
     setManageStatus('error', error.message || 'Could not add question.');
+  }
+}
+
+function editQuestion(questionId) {
+  if (!canEditSetup()) return;
+  const question = activeElectionDetail.questions.find((item) => item.id === questionId);
+  if (!question) return;
+  editingQuestionId = questionId;
+  questionTextInput.value = question.question_text || '';
+  choiceOneInput.value = question.choices[0] ? question.choices[0].choice_text : '';
+  choiceTwoInput.value = question.choices[1] ? question.choices[1].choice_text : '';
+  passingRuleSelect.value = question.passing_rule || 'simple_majority';
+  passingThresholdInput.value = question.passing_threshold_percent || '';
+  questionForm.querySelector('button[type="submit"]').textContent = 'Save Question';
+  questionEditActions.classList.remove('hidden');
+}
+
+function clearQuestionForm() {
+  editingQuestionId = null;
+  questionForm.reset();
+  questionForm.querySelector('button[type="submit"]').textContent = 'Add Question';
+  questionEditActions.classList.add('hidden');
+}
+
+async function deleteQuestion() {
+  if (!editingQuestionId || !activeElection) return;
+  try {
+    await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}/questions/${encodeURIComponent(editingQuestionId)}`, {
+      method: 'DELETE',
+    });
+    clearQuestionForm();
+    setManageStatus('success', 'Question deleted.');
+    await loadElectionDetail(activeElection.id);
+  } catch (error) {
+    setManageStatus('error', error.message || 'Could not delete question.');
   }
 }
 
@@ -770,6 +854,20 @@ function labelize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function runStatusLabel(value) {
+  if (value === 'draft') return 'Not Started';
+  if (value === 'attendance_open' || value === 'discussion') return 'Attendance';
+  if (value === 'voting_open') return 'Voting';
+  if (value === 'voting_closed' || value === 'results_published') return 'Closed';
+  return labelize(value);
+}
+
+function runStageStatus(value) {
+  if (value === 'draft' || value === 'discussion') return 'attendance_open';
+  if (value === 'results_published' || value === 'archived') return 'voting_closed';
+  return value;
+}
+
 function escapeHtml(value) {
   return String(value == null ? '' : value)
     .replaceAll('&', '&amp;')
@@ -795,6 +893,14 @@ electionSelect.addEventListener('change', () => loadElectionDetail(electionSelec
 stageActionButton.addEventListener('click', advanceElectionStage);
 newElectionButton.addEventListener('click', () => setElectionFormMode('new'));
 deleteElectionButton.addEventListener('click', deleteElection);
+cancelQuestionEditButton.addEventListener('click', clearQuestionForm);
+deleteQuestionButton.addEventListener('click', deleteQuestion);
+questionListElement.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-edit-question]');
+  if (button) {
+    editQuestion(button.dataset.editQuestion);
+  }
+});
 proxyForm.addEventListener('submit', addProxy);
 proxyListElement.addEventListener('click', (event) => {
   const button = event.target.closest('[data-cancel-proxy]');
