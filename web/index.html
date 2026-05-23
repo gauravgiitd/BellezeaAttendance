@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Nambiar Bellezea Attendance</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
+    <script src="config.js?v=20260523-3" defer></script>
+    <script src="app.js?v=20260523-3" defer></script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <h1 id="page-title">Nambiar Bellezea Attendance</h1>
+        <p id="dashboard-updated" class="updated-copy">Loading attendance dashboard...</p>
+      </header>
+
+      <section class="panes" aria-labelledby="page-title">
+        <section class="pane attendance-pane" aria-label="Take attendance">
+          <div class="pane-head">
+            <h2>Take Attendance</h2>
+          </div>
+
+          <div class="actions">
+            <button id="scan-button" class="primary" type="button">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span>Scan QR</span>
+            </button>
+
+            <label class="file-button" for="qr-file">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 16V4m0 0 4 4m-4-4-4 4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>Upload QR</span>
+            </label>
+            <input id="qr-file" type="file" accept="image/*">
+          </div>
+
+          <div id="qr-reader" aria-live="polite"></div>
+
+          <div class="manual">
+            <label for="manual-text">Paste QR text or passcode</label>
+            <div class="manual-row">
+              <textarea id="manual-text" rows="1" autocomplete="one-time-code" inputmode="numeric"></textarea>
+              <button id="manual-button" class="secondary" type="button">Submit</button>
+            </div>
+          </div>
+
+          <div id="status" class="status" role="status" aria-live="polite">
+            <p class="status-title">Ready</p>
+            <p class="status-copy">Use the camera, upload a screenshot, or paste the QR text.</p>
+          </div>
+        </section>
+
+        <section class="pane summary-pane" aria-label="Villa representation summary">
+          <div class="pane-head">
+            <h2>Villa Summary</h2>
+            <button id="refresh-dashboard" class="icon-button" type="button" aria-label="Refresh dashboard">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="summary-grid">
+            <div class="metric-block">
+              <span>Total Villas</span>
+              <strong id="total-villas">-</strong>
+            </div>
+            <div class="metric-block">
+              <span>Represented</span>
+              <strong id="represented-villas">-</strong>
+            </div>
+            <div class="metric-block wide">
+              <span>Representation</span>
+              <strong id="representation-pct">-</strong>
+            </div>
+          </div>
+
+          <div class="progress-track" aria-hidden="true">
+            <div id="representation-bar" class="progress-bar"></div>
+          </div>
+        </section>
+
+        <section class="pane attendees-pane" aria-label="Attendees">
+          <div class="pane-head">
+            <h2>Attendees</h2>
+            <span id="attendee-count" class="count-pill">0</span>
+          </div>
+          <div id="attendee-list" class="attendee-list" role="list">
+            <p class="empty-list">No attendance marked yet.</p>
+          </div>
+        </section>
+      </section>
+    </main>
+  </body>
+</html>

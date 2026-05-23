@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: nambiar-bellezea-attendance
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: web
