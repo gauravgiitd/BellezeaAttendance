@@ -356,6 +356,15 @@ async def sync_residents_from_csv(file: UploadFile = File(...)) -> dict[str, int
 
 @app.post("/api/residents/sync-from-google-sheet")
 def sync_residents_from_google_sheet(csv_url: str | None = None) -> dict[str, int]:
+    return sync_residents_from_google_sheet_url(csv_url)
+
+
+@app.get("/api/residents/sync-from-google-sheet")
+def sync_residents_from_google_sheet_browser(csv_url: str | None = None) -> dict[str, int]:
+    return sync_residents_from_google_sheet_url(csv_url)
+
+
+def sync_residents_from_google_sheet_url(csv_url: str | None = None) -> dict[str, int]:
     url = csv_url or os.environ.get("RESIDENT_MASTER_CSV_URL")
     if not url:
         raise HTTPException(status_code=400, detail="csv_url or RESIDENT_MASTER_CSV_URL is required")
