@@ -575,6 +575,53 @@ def mark_manual_attendance(election_id: str, payload: AttendanceManualRequest) -
     )
 
 
+@app.get("/api/elections/{election_id}/attendance/dashboard")
+def attendance_dashboard(election_id: str) -> dict[str, Any]:
+    with connection() as conn:
+        with conn.cursor() as cur:
+            election = fetch_election_summary(cur, election_id)
+            if not election:
+                raise HTTPException(status_code=404, detail="Election not found")
+            cur.execute(
+                """
+                SELECT ar.id, ar.method, ar.source, ar.attended_at,
+                  r.user_id, r.name, r.user_type, r.status,
+                  v.house_id, v.house_no
+                FROM attendance_records ar
+                JOIN residents r ON r.user_id = ar.resident_user_id
+                JOIN villas v ON v.house_id = ar.house_id
+                WHERE ar.election_id = %s
+                ORDER BY ar.attended_at DESC
+                """,
+                (election_id,),
+            )
+            attendees = [
+                {
+                    "id": str(row["id"]),
+                    "user_id": row["user_id"],
+                    "house_id": row["house_id"],
+                    "name": row["name"],
+                    "flat": row["house_no"],
+                    "userType": row["user_type"],
+                    "status": row["status"],
+                    "method": row["method"],
+                    "source": row["source"],
+                    "attendanceTime": row["attended_at"],
+                }
+                for row in cur.fetchall()
+            ]
+    election_data = election_public(election)
+    represented = election_data["represented_villas"]
+    eligible = election_data["eligible_villas"]
+    return {
+        "election": election_data,
+        "totalVillas": eligible,
+        "representedVillas": represented,
+        "representationPct": (represented / eligible * 100) if eligible else 0,
+        "attendees": attendees,
+    }
+
+
 @app.post("/api/proxies")
 def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
     with connection() as conn:

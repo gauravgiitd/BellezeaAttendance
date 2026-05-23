@@ -23,9 +23,7 @@ body {
   min-height: 100%;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(circle at top left, rgba(14, 124, 102, 0.14), transparent 32rem),
-    linear-gradient(135deg, #f9fbff 0%, #eef3f9 100%);
+  background: linear-gradient(135deg, #f9fbff 0%, #eef3f9 100%);
 }
 
 body {
@@ -64,6 +62,11 @@ h2 {
   letter-spacing: 0;
 }
 
+.subhead {
+  margin-top: 6px;
+  color: var(--muted);
+}
+
 .updated-copy {
   color: var(--muted);
   font-size: 0.92rem;
@@ -72,7 +75,7 @@ h2 {
 
 .panes {
   display: grid;
-  grid-template-columns: minmax(320px, 0.95fr) minmax(280px, 0.85fr) minmax(340px, 1.2fr);
+  grid-template-columns: minmax(340px, 1.15fr) minmax(320px, 1fr) minmax(320px, 0.9fr);
   gap: 16px;
   align-items: start;
 }
@@ -115,6 +118,54 @@ h2 {
   margin-top: 6px;
 }
 
+h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.stacked-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.compact-form {
+  margin-top: 16px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.form-grid.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+label {
+  display: grid;
+  gap: 7px;
+}
+
+label span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.check-row {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.check-row input {
+  width: 18px;
+  height: 18px;
+}
+
 button,
 .file-button {
   min-height: 48px;
@@ -144,6 +195,12 @@ button:active,
 
 .primary:hover {
   background: var(--brand-strong);
+}
+
+.file-button span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
 }
 
 .secondary,
@@ -232,7 +289,21 @@ textarea {
   line-height: 1.35;
 }
 
-textarea:focus {
+input,
+select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
+textarea:focus,
+input:focus,
+select:focus {
   outline: 3px solid rgba(14, 124, 102, 0.18);
   border-color: var(--brand);
 }
@@ -355,6 +426,28 @@ textarea:focus {
   transition: width 0.25s ease;
 }
 
+.quorum-status {
+  margin-top: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.success-text {
+  color: var(--success);
+  font-weight: 750;
+}
+
+.attendees-block {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.compact-head {
+  min-height: 28px;
+  margin-bottom: 12px;
+}
+
 .count-pill {
   min-width: 34px;
   min-height: 28px;
@@ -388,7 +481,7 @@ textarea:focus {
 }
 
 .attendee-list {
-  max-height: calc(100vh - 150px);
+  max-height: calc(100vh - 370px);
   overflow: auto;
   display: grid;
   gap: 10px;
@@ -440,6 +533,41 @@ textarea:focus {
   line-height: 1.4;
 }
 
+.question-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.question-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: var(--soft);
+}
+
+.question-card strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.question-card ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+
+.question-card small,
+.question-number {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
 @media (max-width: 1080px) {
   .panes {
     grid-template-columns: 1fr 1fr;
@@ -468,7 +596,8 @@ textarea:focus {
   .actions,
   .manual-row,
   .resident,
-  .summary-grid {
+  .summary-grid,
+  .form-grid.two {
     grid-template-columns: 1fr;
   }
 

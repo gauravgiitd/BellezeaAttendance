@@ -248,11 +248,13 @@ Included:
 - Proxy representation expansion at attendance time.
 - Villa-level ballot submission endpoint.
 - Aggregate results endpoint that hides voter-level ballot details.
+- Election-specific attendance dashboard endpoint.
+- First officer UI for creating elections, adding two-choice questions, selecting an active election, viewing quorum, and marking QR/manual attendance against Postgres.
 
 Next implementation step:
 
-1. Add officer UI for creating elections, questions, proxies, and defaulters.
-2. Add election selector to attendance UI.
-3. Point attendance UI to the new backend for election-aware attendance.
-4. Add voter portal for QR login and represented-villa ballot submission.
-5. Add officer results/archive views.
+1. Add officer UI for proxy and defaulter management.
+2. Add question image and choice image support.
+3. Add voter portal for QR login and represented-villa ballot submission.
+4. Add officer results/archive views.
+5. Add authentication before live election use.

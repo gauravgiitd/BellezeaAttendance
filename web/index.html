@@ -6,17 +6,113 @@
     <title>Nambiar Bellezea Elections</title>
     <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260523-5" defer></script>
-    <script src="app.js?v=20260523-5" defer></script>
+    <script src="config.js?v=20260523-6" defer></script>
+    <script src="app.js?v=20260523-6" defer></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="app-header">
-        <h1 id="page-title">Nambiar Bellezea Elections</h1>
-        <p id="dashboard-updated" class="updated-copy">Loading attendance dashboard...</p>
+        <div>
+          <h1 id="page-title">Nambiar Bellezea Elections</h1>
+          <p class="subhead">Election officer console</p>
+        </div>
+        <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
       </header>
 
       <section class="panes" aria-labelledby="page-title">
+        <section class="pane officer-pane" aria-label="Election setup">
+          <div class="pane-head">
+            <h2>Election Setup</h2>
+            <button id="refresh-elections" class="icon-button" type="button" aria-label="Refresh elections">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              <span>Active election</span>
+              <select id="election-select"></select>
+            </label>
+          </div>
+
+          <form id="election-form" class="stacked-form">
+            <h3>Create Election</h3>
+            <label>
+              <span>Title</span>
+              <input id="election-title" type="text" autocomplete="off" required>
+            </label>
+            <label>
+              <span>Description</span>
+              <textarea id="election-description" rows="2"></textarea>
+            </label>
+            <div class="form-grid two">
+              <label>
+                <span>Quorum %</span>
+                <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
+              </label>
+              <label>
+                <span>Status</span>
+                <select id="election-status">
+                  <option value="draft">Draft</option>
+                  <option value="attendance_open">Attendance open</option>
+                  <option value="discussion">Discussion</option>
+                  <option value="voting_open">Voting open</option>
+                  <option value="voting_closed">Voting closed</option>
+                  <option value="results_published">Results published</option>
+                </select>
+              </label>
+            </div>
+            <label class="check-row">
+              <input id="include-defaulters-quorum" type="checkbox">
+              <span>Count defaulters in quorum</span>
+            </label>
+            <label class="check-row">
+              <input id="allow-defaulters-vote" type="checkbox">
+              <span>Allow defaulters to vote</span>
+            </label>
+            <button class="primary" type="submit">Create Election</button>
+          </form>
+
+          <form id="question-form" class="stacked-form">
+            <h3>Add Question</h3>
+            <label>
+              <span>Question</span>
+              <textarea id="question-text" rows="2" required></textarea>
+            </label>
+            <div class="form-grid two">
+              <label>
+                <span>Choice 1</span>
+                <input id="choice-one" type="text" autocomplete="off" required>
+              </label>
+              <label>
+                <span>Choice 2</span>
+                <input id="choice-two" type="text" autocomplete="off" required>
+              </label>
+            </div>
+            <div class="form-grid two">
+              <label>
+                <span>Passing rule</span>
+                <select id="passing-rule">
+                  <option value="simple_majority">Simple majority</option>
+                  <option value="two_thirds">Two-thirds</option>
+                  <option value="custom_threshold">Custom threshold</option>
+                </select>
+              </label>
+              <label>
+                <span>Custom %</span>
+                <input id="passing-threshold" type="number" min="0" max="100" step="0.1" placeholder="Optional">
+              </label>
+            </div>
+            <button class="secondary" type="submit">Add Question</button>
+          </form>
+
+          <div id="question-list" class="question-list">
+            <p class="empty-list">Select or create an election to manage questions.</p>
+          </div>
+        </section>
+
         <section class="pane attendance-pane" aria-label="Take attendance">
           <div class="pane-head">
             <h2>Take Attendance</h2>
@@ -55,15 +151,34 @@
             </div>
           </div>
 
+          <form id="manual-attendance-form" class="stacked-form compact-form">
+            <h3>Manual Attendance</h3>
+            <div class="form-grid two">
+              <label>
+                <span>User ID</span>
+                <input id="manual-user-id" type="text" autocomplete="off">
+              </label>
+              <label>
+                <span>House ID</span>
+                <input id="manual-house-id" type="text" autocomplete="off">
+              </label>
+            </div>
+            <label>
+              <span>Name</span>
+              <input id="manual-name" type="text" autocomplete="off">
+            </label>
+            <button class="secondary" type="submit">Add Manually</button>
+          </form>
+
           <div id="status" class="status" role="status" aria-live="polite">
             <p class="status-title">Ready</p>
-            <p class="status-copy">Use the camera, upload a screenshot, or paste the QR text.</p>
+            <p class="status-copy">Select an election, then scan or add attendance.</p>
           </div>
         </section>
 
         <section class="pane summary-pane" aria-label="Villa representation summary">
           <div class="pane-head">
-            <h2>Villa Summary</h2>
+            <h2>Quorum</h2>
             <button id="refresh-dashboard" class="icon-button" type="button" aria-label="Refresh dashboard">
               <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -84,23 +199,28 @@
               <span>Representation</span>
               <strong id="representation-pct">-</strong>
             </div>
+            <div class="metric-block wide">
+              <span>Quorum Required</span>
+              <strong id="quorum-required">-</strong>
+            </div>
           </div>
 
           <div class="progress-track" aria-hidden="true">
             <div id="representation-bar" class="progress-bar"></div>
           </div>
-        </section>
+          <p id="quorum-status" class="quorum-status">Select an election to view quorum.</p>
 
-        <section class="pane attendees-pane" aria-label="Attendees">
-          <div class="pane-head">
-            <h2>Attendees</h2>
-            <span id="attendee-count" class="count-pill">0</span>
-          </div>
-          <div class="attendee-search">
-            <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
-          </div>
-          <div id="attendee-list" class="attendee-list" role="list">
-            <p class="empty-list">No attendance marked yet.</p>
+          <div class="attendees-block">
+            <div class="pane-head compact-head">
+              <h2>Attendees</h2>
+              <span id="attendee-count" class="count-pill">0</span>
+            </div>
+            <div class="attendee-search">
+              <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
+            </div>
+            <div id="attendee-list" class="attendee-list" role="list">
+              <p class="empty-list">No attendance marked yet.</p>
+            </div>
           </div>
         </section>
       </section>

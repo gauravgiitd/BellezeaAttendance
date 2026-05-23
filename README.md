@@ -1,6 +1,6 @@
 # Nambiar Bellezea Elections
 
-This is a tiny web app for online self-attendance.
+This is the web app and backend for Nambiar Bellezea election attendance and voting.
 
 For the broader election-management product plan, see:
 
@@ -9,19 +9,25 @@ For the broader election-management product plan, see:
 
 The public site is intended to live at `https://bellezea-elections.onrender.com/`.
 
-The new Postgres-backed election API lives in `backend/`. The current static attendance flow still works with Apps Script while the election backend is being built.
+The new Postgres-backed election API lives in `backend/`. The static web app now includes the first election officer console for election setup, question creation, quorum tracking, and election-aware attendance.
 
-People open one link, scan their MyGate QR code or upload a screenshot, and the app writes a row to the `Attendance` sheet after matching the passcode in `Resident Master`.
+Election officers can create elections, add questions, select an active election, scan MyGate QR codes, and track villa-level quorum. Resident Master is synced from Google Sheets into Postgres, while election state and attendance records are stored in Postgres.
 
-The scanner is a static website in `web/`. Google Apps Script is used only as the Google Sheets backend because Apps Script HTML pages can block camera access in modern browser sandboxing.
+The scanner is a static website in `web/`. The election backend is a FastAPI service in `backend/`.
 
-## Sheet Structure
+## Resident Master Structure
 
 Your resident spreadsheet tab is currently configured as `Sheet1`. It should have these headers:
 
 ```text
 Passcode, Name, Flat, Mobile No, Email, User Type, Status, User Id (Do Not Edit), House Id (Do Not Edit)
 ```
+
+This sheet is synced into Postgres through the backend.
+
+## Legacy Sheet Structure
+
+These sheets are used only by the original Apps Script attendance backend:
 
 Your attendance spreadsheet tab is currently configured as `Attendance`. It can be empty. The script will create or extend these headers:
 
@@ -35,9 +41,11 @@ Your attendance spreadsheet should also have a `Voting Group` tab with these hea
 House No, Resident Type, Resident Name, User Id (Do Not Edit), House Id (Do Not Edit)
 ```
 
-## Backend Setup
+## Legacy Apps Script Setup
 
-1. Open the Google Sheet where you want to configure the backend. I recommend the `Attendance` Google Sheet.
+The original Apps Script attendance backend remains in `apps-script/` for reference and fallback.
+
+1. Open the Google Sheet where you want to configure the legacy backend. I recommend the `Attendance` Google Sheet.
 2. Go to **Extensions -> Apps Script**.
 3. Create this file in Apps Script:
    - `Code.gs` from `apps-script/Code.gs`
@@ -54,7 +62,7 @@ House No, Resident Type, Resident Name, User Id (Do Not Edit), House Id (Do Not 
 ## Frontend Setup
 
 1. Open `web/config.js`.
-2. Paste the Apps Script web app URL into `apiUrl`.
+2. Confirm `apiUrl` points to the deployed election API.
 3. Host the `web/` folder on any HTTPS static host:
    - Netlify
    - Vercel
@@ -76,22 +84,21 @@ NUMBER(
 )
 ```
 
-- Looks up the resident using the passcode.
-- Appends attendance only when the passcode exists in `Resident Master`.
-- Prevents duplicate attendance for the same passcode on the same date.
-- After a new attendance row is added, appends all same-house residents whose `User Type` contains `Owner` into `Voting Group`.
-- Prevents duplicate `Voting Group` rows by `House Id (Do Not Edit)` + `User Id (Do Not Edit)`.
+- Looks up the resident using the passcode in Postgres after Resident Master sync.
+- Allows only residents whose `User Type` contains `Owner`.
+- Records attendance against the selected election.
+- Updates villa-level quorum representation.
 - Supports camera scanning, QR screenshot upload, and manual paste.
 
 ## Quick Test
 
 Before sharing the link widely:
 
-1. Add one known resident row to `Resident Master`.
-2. Host the `web/` folder or run it locally.
-3. Paste the passcode into the manual field and submit.
-4. Confirm a row appears in `Attendance`.
-5. Try the same passcode again and confirm it says attendance is already marked.
+1. Sync Resident Master into Postgres.
+2. Create a test election.
+3. Add one question with two choices.
+4. Paste a known owner passcode into the attendance manual field.
+5. Confirm quorum and attendee list update for the selected election.
 
 For local testing:
 
