@@ -12,6 +12,7 @@ const attendeeCountElement = document.querySelector('#attendee-count');
 const attendeeListElement = document.querySelector('#attendee-list');
 const dashboardUpdatedElement = document.querySelector('#dashboard-updated');
 const refreshDashboardButton = document.querySelector('#refresh-dashboard');
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwDK6bZbTX_EX1VEdwAxV-74I1DnzGQH8XUrOIo_cFDKmMBI18qmXRgBNdIXxhnMBuOMA/exec';
 
 let html5QrCode = null;
 let scanning = false;
@@ -21,7 +22,7 @@ window.AttendanceCallbacks = window.AttendanceCallbacks || {};
 
 function getApiUrl() {
   const config = window.AttendanceConfig || {};
-  return String(config.apiUrl || '').trim();
+  return String(config.apiUrl || DEFAULT_API_URL).trim();
 }
 
 function isConfigured() {
