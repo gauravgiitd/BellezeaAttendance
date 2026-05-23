@@ -38,10 +38,10 @@ body {
 
 .app-header {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 4px 2px 18px;
+  padding: 4px 2px 14px;
 }
 
 h1,
@@ -73,11 +73,91 @@ h2 {
   text-align: right;
 }
 
-.panes {
+.top-controls {
+  width: min(100%, 520px);
   display: grid;
-  grid-template-columns: minmax(340px, 1.15fr) minmax(320px, 1fr) minmax(320px, 0.9fr);
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.active-election-control {
+  min-width: 0;
+}
+
+.command-strip {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(130, 144, 166, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.command-strip div {
+  min-width: 120px;
+}
+
+.command-strip span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.command-strip strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 1rem;
+}
+
+.view-tabs {
+  display: inline-grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.view-tab {
+  min-height: 40px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.view-tab.active {
+  background: var(--brand);
+  color: #fff;
+}
+
+.workspace {
+  display: none;
+}
+
+.workspace.active {
+  display: grid;
   gap: 16px;
   align-items: start;
+}
+
+#attendance-view {
+  grid-template-columns: minmax(360px, 0.9fr) minmax(420px, 1.1fr);
+}
+
+.setup-workspace {
+  grid-template-columns: minmax(360px, 720px);
+}
+
+.questions-workspace {
+  grid-template-columns: minmax(360px, 0.9fr) minmax(360px, 1.1fr);
 }
 
 .pane {
@@ -130,6 +210,12 @@ h3 {
   margin-top: 18px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+
+.plain-form {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .compact-form {
@@ -398,10 +484,6 @@ select:focus {
   background: var(--soft);
 }
 
-.metric-block.wide {
-  grid-column: 1 / -1;
-}
-
 .metric-block strong {
   display: block;
   margin-top: 8px;
@@ -569,12 +651,9 @@ select:focus {
 }
 
 @media (max-width: 1080px) {
-  .panes {
+  #attendance-view,
+  .questions-workspace {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .attendees-pane {
-    grid-column: 1 / -1;
   }
 }
 
@@ -584,29 +663,33 @@ select:focus {
   }
 
   .app-header {
-    display: block;
+    display: grid;
+    gap: 12px;
+  }
+
+  .top-controls,
+  .command-strip {
+    grid-template-columns: 1fr;
   }
 
   .updated-copy {
-    margin-top: 8px;
     text-align: left;
   }
 
-  .panes,
+  .view-tabs {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
+
+  #attendance-view,
+  .setup-workspace,
+  .questions-workspace,
   .actions,
   .manual-row,
   .resident,
   .summary-grid,
   .form-grid.two {
     grid-template-columns: 1fr;
-  }
-
-  .attendees-pane {
-    grid-column: auto;
-  }
-
-  .metric-block.wide {
-    grid-column: auto;
   }
 
   .attendee-list {

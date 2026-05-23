@@ -35,9 +35,14 @@ const choiceTwoInput = document.querySelector('#choice-two');
 const passingRuleSelect = document.querySelector('#passing-rule');
 const passingThresholdInput = document.querySelector('#passing-threshold');
 const questionListElement = document.querySelector('#question-list');
+const activeElectionStatusElement = document.querySelector('#active-election-status');
+const headerQuorumElement = document.querySelector('#header-quorum');
+const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
+const workspaces = Array.from(document.querySelectorAll('.workspace'));
 
 const DEFAULT_API_URL = 'https://bellezea-elections-api.onrender.com';
 const ACTIVE_ELECTION_KEY = 'bellezea-active-election-id';
+const ACTIVE_VIEW_KEY = 'bellezea-officer-view';
 
 let html5QrCode = null;
 let scanning = false;
@@ -46,6 +51,19 @@ let elections = [];
 let activeElection = null;
 let activeElectionDetail = null;
 let dashboardAttendees = [];
+
+function switchView(viewName) {
+  const target = viewName || 'attendance';
+  viewTabs.forEach((tab) => {
+    const active = tab.dataset.view === target;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  workspaces.forEach((workspace) => {
+    workspace.classList.toggle('active', workspace.id === `${target}-view`);
+  });
+  window.localStorage.setItem(ACTIVE_VIEW_KEY, target);
+}
 
 function getApiUrl() {
   const config = window.AttendanceConfig || {};
@@ -136,6 +154,7 @@ async function selectInitialElection() {
     activeElectionDetail = null;
     renderQuestions();
     renderEmptyDashboard();
+    switchView('setup');
     return;
   }
 
@@ -188,6 +207,8 @@ function renderEmptyDashboard() {
   representedVillasElement.textContent = '-';
   representationPctElement.textContent = '-';
   quorumRequiredElement.textContent = '-';
+  activeElectionStatusElement.textContent = activeElection ? labelize(activeElection.status) : '-';
+  headerQuorumElement.textContent = '-';
   quorumStatusElement.textContent = 'Select an election to view quorum.';
   representationBarElement.style.width = '0%';
   dashboardAttendees = [];
@@ -208,6 +229,8 @@ function renderDashboard(data) {
   representedVillasElement.textContent = formatInt(representedVillas);
   representationPctElement.textContent = `${formatPct(representationPct)}%`;
   quorumRequiredElement.textContent = election ? `${formatPct(election.quorum_percent)}%` : '-';
+  activeElectionStatusElement.textContent = election ? labelize(election.status) : '-';
+  headerQuorumElement.textContent = `${formatPct(representationPct)}% / ${election ? formatPct(election.quorum_percent) : '-'}%`;
   representationBarElement.style.width = `${Math.max(0, Math.min(100, representationPct))}%`;
   attendeeCountElement.textContent = formatInt(attendees.length);
   quorumStatusElement.textContent = election && election.quorum_reached
@@ -284,6 +307,7 @@ async function createElection(event) {
     await loadElections();
     electionSelect.value = election.id;
     await loadElectionDetail(election.id);
+    switchView('questions');
   } catch (error) {
     setStatus('error', 'Could not create election', error.message || 'Please try again.');
   }
@@ -530,10 +554,14 @@ attendeeSearchInput.addEventListener('input', renderAttendees);
 electionForm.addEventListener('submit', createElection);
 questionForm.addEventListener('submit', addQuestion);
 electionSelect.addEventListener('change', () => loadElectionDetail(electionSelect.value));
+viewTabs.forEach((tab) => {
+  tab.addEventListener('click', () => switchView(tab.dataset.view));
+});
 manualInput.addEventListener('keydown', (event) => {
   if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
     submitManual();
   }
 });
 
+switchView(window.localStorage.getItem(ACTIVE_VIEW_KEY) || 'attendance');
 loadElections();
