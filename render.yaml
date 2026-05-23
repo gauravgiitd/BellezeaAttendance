@@ -1,19 +1,19 @@
 services:
   - type: web
-    name: nambiar-bellezea-attendance
+    name: bellezea-elections
     runtime: static
     buildCommand: ""
     staticPublishPath: web
 
   - type: web
-    name: nambiar-bellezea-election-api
+    name: bellezea-elections-api
     runtime: python
     buildCommand: "pip install -r backend/requirements.txt"
     startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: nambiar-bellezea-election-db
+          name: bellezea-elections-db
           property: connectionString
       - key: AUTO_MIGRATE
         value: "true"
@@ -21,6 +21,6 @@ services:
         value: "*"
 
 databases:
-  - name: nambiar-bellezea-election-db
+  - name: bellezea-elections-db
     databaseName: bellezea_elections
     user: bellezea_elections
