@@ -780,7 +780,6 @@ def update_election_quorum(election_id: str, payload: ElectionQuorumUpdate) -> d
 def delete_election(election_id: str) -> dict[str, str]:
     with connection() as conn:
         with conn.cursor() as cur:
-            ensure_election_config_editable(cur, election_id)
             cur.execute("DELETE FROM elections WHERE id = %s RETURNING id", (election_id,))
             deleted = cur.fetchone()
         conn.commit()

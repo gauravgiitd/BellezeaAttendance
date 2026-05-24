@@ -730,7 +730,7 @@ function syncManageLocks() {
   newElectionButton.disabled = false;
   editElectionButton.disabled = (!canEditSetup() && !canEditQuorum()) || !activeElection;
   editElectionButton.textContent = activeElection && !canEditSetup() && canEditQuorum() ? 'Edit Quorum' : 'Edit Settings';
-  deleteElectionButton.disabled = setupLocked || !activeElection;
+  deleteElectionButton.disabled = !activeElection;
   saveElectionButton.disabled = editingNewElection ? false : (!canEditSetup() && !canEditQuorum());
   if (!editingNewElection) {
     saveElectionButton.textContent = activeElection && !canEditSetup() && canEditQuorum() ? 'Save Quorum' : 'Save Election';
@@ -1061,7 +1061,9 @@ async function saveElection(event) {
 
 async function deleteElection() {
   if (!activeElection || editingNewElection) return;
-  const confirmed = window.confirm(`Delete "${activeElection.title}"? This will remove its setup and attendance records.`);
+  const confirmed = window.confirm(
+    `Delete "${activeElection.title}"?\n\nAll information for this election will be permanently lost, including settings, questions, attendance, proxies, votes, and results.\n\nThis delete option is enabled only while the app is under development.`
+  );
   if (!confirmed) return;
   try {
     await apiRequest(`/api/elections/${encodeURIComponent(activeElection.id)}`, { method: 'DELETE' });
