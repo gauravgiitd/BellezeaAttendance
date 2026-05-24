@@ -77,6 +77,7 @@ const managePassingRuleSummaryElement = document.querySelector('#manage-passing-
 const manageDefaulterSummaryElement = document.querySelector('#manage-defaulter-summary');
 const electionLibraryListElement = document.querySelector('#election-library-list');
 const newElectionButton = document.querySelector('#new-election-button');
+const syncResidentsButton = document.querySelector('#sync-residents-button');
 const editElectionButton = document.querySelector('#edit-election-button');
 const deleteElectionButton = document.querySelector('#delete-election-button');
 const saveElectionButton = document.querySelector('#save-election-button');
@@ -467,6 +468,23 @@ async function loadResidentDirectory() {
     renderVillaSuggestions(proxyHolderVillaInput, proxyHolderVillaResults);
     renderVillaSuggestions(defaulterVillaInput, defaulterVillaResults);
     setManageStatus('error', error.message || 'Could not load Resident Master villas.');
+  }
+}
+
+async function syncResidentsFromMaster() {
+  syncResidentsButton.disabled = true;
+  setManageStatus('', 'Syncing Resident Master...');
+  try {
+    const result = await apiRequest('/api/residents/sync-from-google-sheet', { method: 'POST' });
+    await loadResidentDirectory();
+    setManageStatus(
+      'success',
+      `Resident Master synced. Imported ${formatInt(result.imported)} rows; skipped ${formatInt(result.skipped)} rows.`
+    );
+  } catch (error) {
+    setManageStatus('error', error.message || 'Could not sync Resident Master.');
+  } finally {
+    syncResidentsButton.disabled = false;
   }
 }
 
@@ -1977,6 +1995,7 @@ refreshVotingStatusButton.addEventListener('click', loadVotingStatus);
 restartVotingButton.addEventListener('click', restartVoting);
 refreshElectionsButton.addEventListener('click', loadElections);
 refreshElectionLibraryButton.addEventListener('click', loadElections);
+syncResidentsButton.addEventListener('click', syncResidentsFromMaster);
 attendeeSearchInput.addEventListener('input', renderAttendees);
 attendeeFilterSelect.addEventListener('change', renderAttendees);
 electionForm.addEventListener('submit', saveElection);
