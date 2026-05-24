@@ -2,3 +2,4 @@
 resident_details_with_ids*.csv
 *_match_summary.csv
 __pycache__/
+.venv/

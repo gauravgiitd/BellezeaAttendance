@@ -4,6 +4,13 @@ services:
     runtime: static
     buildCommand: ""
     staticPublishPath: web
+    routes:
+      - type: rewrite
+        source: /officer
+        destination: /index.html
+      - type: rewrite
+        source: /voter
+        destination: /index.html
 
   - type: web
     name: bellezea-elections-api
@@ -19,6 +26,10 @@ services:
         value: "true"
       - key: CORS_ORIGINS
         value: "*"
+      - key: OFFICER_EMAIL
+        value: bellezea.elections@gmail.com
+      - key: GOOGLE_CLIENT_ID
+        sync: false
 
 databases:
   - name: bellezea-elections-db

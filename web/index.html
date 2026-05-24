@@ -4,161 +4,266 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nambiar Bellezea Elections</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260524-15">
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260523-10" defer></script>
-    <script src="app.js?v=20260523-10" defer></script>
+    <script src="config.js?v=20260524-15" defer></script>
+    <script src="app.js?v=20260524-15" defer></script>
   </head>
   <body>
     <main class="app-shell">
       <header class="app-header">
         <h1 id="page-title">Nambiar Bellezea Elections</h1>
-        <nav class="mode-tabs" aria-label="Officer areas">
+        <nav id="portal-links" class="portal-links" aria-label="Election portals">
+          <a id="officer-link" href="/officer">Officer</a>
+          <a id="voter-link" href="/voter">Voter</a>
+        </nav>
+        <nav id="officer-tabs" class="mode-tabs" aria-label="Officer areas" hidden>
           <button class="mode-tab active" type="button" data-mode="manage">Manage Elections</button>
           <button class="mode-tab" type="button" data-mode="run">Run Election</button>
+          <button id="officer-logout-button" class="mode-tab" type="button">Logout</button>
         </nav>
       </header>
 
-      <section class="election-picker" aria-label="Election selector">
-        <label class="active-election-control">
-          <span>Election</span>
-          <select id="election-select"></select>
-        </label>
-        <button id="refresh-elections" class="icon-button" type="button" aria-label="Refresh elections">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-        </button>
-        <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
+      <section id="home-view" class="app-view active" aria-label="Election portals">
+        <section class="portal-home">
+          <div>
+            <span class="status-pill">Bellezea Elections</span>
+            <h2>Choose how you want to enter</h2>
+            <p>Election officers manage attendance, voting, proxies, and results. Voters scan their MyGate QR and submit votes when voting opens.</p>
+          </div>
+          <div class="portal-card-grid">
+            <a class="portal-card" href="/officer">
+              <strong>Election Officer</strong>
+              <span>Requires bellezea.elections@gmail.com</span>
+            </a>
+            <a class="portal-card" href="/voter">
+              <strong>Voter Portal</strong>
+              <span>Scan or upload your MyGate QR</span>
+            </a>
+          </div>
+        </section>
       </section>
 
-      <section id="manage-view" class="app-view active" aria-label="Manage elections">
-        <section class="rules-strip" aria-label="Election lifecycle rules">
-          <strong>Lifecycle rules</strong>
-          <span>Create the election package here: details, quorum, questions, and proxies.</span>
-          <span>Details, questions, and deletion lock once attendance starts.</span>
-          <span>Proxies stay editable during Attendance and lock when Voting opens.</span>
+      <section id="officer-auth-view" class="app-view" aria-label="Election officer login">
+        <section class="pane auth-pane">
+          <div>
+            <span class="status-pill">Officer Console</span>
+            <h2>Sign in with Google</h2>
+            <p id="officer-login-copy" class="muted-copy">Only bellezea.elections@gmail.com can open the election officer console.</p>
+          </div>
+          <div id="google-signin-button" class="google-signin-button"></div>
+          <div id="officer-auth-status" class="inline-status" role="status" aria-live="polite"></div>
+        </section>
+      </section>
+
+      <section id="manage-view" class="app-view" aria-label="Manage elections">
+        <section class="manage-layout">
+          <aside class="pane election-library-pane">
+            <div class="pane-head">
+              <h2>Elections</h2>
+              <div class="summary-actions">
+                <button id="refresh-election-library" class="icon-button" type="button" aria-label="Refresh elections">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                <button id="new-election-button" class="primary small-button" type="button">New Election</button>
+              </div>
+            </div>
+            <div id="election-library-list" class="election-library-list">
+              <p class="empty-list">Loading elections...</p>
+            </div>
+          </aside>
+
+          <section class="manage-workspace">
+            <section class="pane election-summary-pane">
+              <div class="selected-election-card">
+                <div>
+                  <span id="manage-election-lifecycle" class="status-pill">Draft</span>
+                  <h2 id="manage-election-title">Select an election</h2>
+                  <p id="manage-election-description" class="muted-copy">Create or select an election to manage its questions and proxies.</p>
+                </div>
+                <div class="summary-actions">
+                  <p id="settings-lock-info" class="section-lock-info"></p>
+                  <button id="edit-election-button" class="secondary small-button" type="button">Edit Settings</button>
+                  <button id="delete-election-button" class="danger-button small-button" type="button">Delete Draft</button>
+                </div>
+              </div>
+              <div class="setup-metrics" aria-label="Election setup summary">
+                <div>
+                  <span>Quorum</span>
+                  <strong id="manage-quorum-summary">-</strong>
+                </div>
+                <div>
+                  <span>Questions</span>
+                  <strong id="manage-question-count">0</strong>
+                </div>
+                <div>
+                  <span>Passing Rule</span>
+                  <strong id="manage-passing-rule-summary">-</strong>
+                </div>
+                <div>
+                  <span>Defaulters</span>
+                  <strong id="manage-defaulter-summary">-</strong>
+                </div>
+              </div>
+              <div id="manage-status" class="inline-status" role="status" aria-live="polite"></div>
+            </section>
+
+            <section class="builder-grid">
+              <section class="pane question-pane">
+                <div class="pane-head">
+                  <h2>Questions</h2>
+                  <p id="question-lock-info" class="section-lock-info"></p>
+                </div>
+
+                <form id="question-form" class="drawer-form">
+                  <label>
+                    <span>Question</span>
+                    <textarea id="question-text" rows="2" required></textarea>
+                  </label>
+                  <div>
+                    <div class="choice-list-head">
+                      <span>Choices</span>
+                      <button id="add-choice-button" class="secondary small-button" type="button">Add Choice</button>
+                    </div>
+                    <div id="choice-list" class="choice-list"></div>
+                  </div>
+                  <button class="secondary" type="submit">Add Question</button>
+                  <div id="question-edit-actions" class="button-row hidden">
+                    <button id="cancel-question-edit-button" class="secondary" type="button">Cancel Edit</button>
+                    <button id="delete-question-button" class="danger-button" type="button">Delete Question</button>
+                  </div>
+                </form>
+
+                <div id="question-list" class="question-list">
+                  <p class="empty-list">Select or create an election to manage questions.</p>
+                </div>
+              </section>
+
+              <section class="pane proxy-pane">
+                <div class="pane-head">
+                  <h2>Proxy Management</h2>
+                  <p id="proxy-lock-info" class="section-lock-info"></p>
+                </div>
+
+                <form id="proxy-form" class="drawer-form">
+                  <div class="form-grid two">
+                    <label>
+                      <span>Grantor Villa</span>
+                      <input id="proxy-grantor-villa" type="text" autocomplete="off" required>
+                      <div id="proxy-grantor-villa-results" class="villa-search-results" role="listbox"></div>
+                    </label>
+                    <label>
+                      <span>Proxy Holder Villa</span>
+                      <input id="proxy-holder-villa" type="text" autocomplete="off" required>
+                      <div id="proxy-holder-villa-results" class="villa-search-results" role="listbox"></div>
+                    </label>
+                  </div>
+                  <label>
+                    <span>Proxy Holder Name</span>
+                    <select id="proxy-holder-user-id" required>
+                      <option value="">Select proxy holder villa first</option>
+                    </select>
+                  </label>
+                  <button class="secondary" type="submit">Add Proxy</button>
+                </form>
+
+                <div id="proxy-list" class="proxy-list">
+                  <p class="empty-list">No proxies configured for this election.</p>
+                </div>
+              </section>
+
+              <section class="pane defaulter-pane">
+                <div class="pane-head">
+                  <h2>Defaulters</h2>
+                  <p id="defaulter-lock-info" class="section-lock-info"></p>
+                </div>
+
+                <form id="defaulter-form" class="drawer-form">
+                  <div class="form-grid two">
+                    <label>
+                      <span>Villa</span>
+                      <input id="defaulter-villa" type="text" autocomplete="off" required>
+                      <div id="defaulter-villa-results" class="villa-search-results" role="listbox"></div>
+                    </label>
+                    <label>
+                      <span>Reason</span>
+                      <input id="defaulter-reason" type="text" autocomplete="off" placeholder="Optional">
+                    </label>
+                  </div>
+                  <button class="secondary" type="submit">Add Defaulter</button>
+                </form>
+
+                <div id="defaulter-list" class="defaulter-list">
+                  <p class="empty-list">No active defaulters.</p>
+                </div>
+              </section>
+            </section>
+          </section>
         </section>
 
-        <section class="manage-grid">
-          <section class="pane config-pane">
+        <dialog id="election-dialog" class="settings-dialog">
+          <form id="election-form" class="drawer-form dialog-panel">
             <div class="pane-head">
-              <h2>Election Details</h2>
-              <button id="new-election-button" class="secondary small-button" type="button">New</button>
+              <h2 id="election-dialog-title">New Election</h2>
+              <button id="close-election-dialog-button" class="icon-button" type="button" aria-label="Close settings">x</button>
             </div>
-
-            <form id="election-form" class="drawer-form">
-              <div class="lifecycle-card">
-                <span>Current lifecycle</span>
-                <strong id="manage-election-lifecycle">Draft</strong>
-                <small id="manage-lock-copy">Start attendance from Run Election after the election package is ready.</small>
-              </div>
-              <label>
-                <span>Title</span>
-                <input id="election-title" type="text" autocomplete="off" required>
-              </label>
-              <label>
-                <span>Description</span>
-                <textarea id="election-description" rows="2"></textarea>
-              </label>
-              <label>
-                <span>Quorum %</span>
-                <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
-              </label>
-              <label class="check-row">
-                <input id="include-defaulters-quorum" type="checkbox">
-                <span>Count defaulters in quorum</span>
-              </label>
-              <label class="check-row">
-                <input id="allow-defaulters-vote" type="checkbox">
-                <span>Allow defaulters to vote</span>
-              </label>
-              <div class="button-row">
-                <button id="save-election-button" class="primary" type="submit">Save Election</button>
-                <button id="delete-election-button" class="danger-button" type="button">Delete</button>
-              </div>
-            </form>
-
-            <div id="manage-status" class="inline-status" role="status" aria-live="polite"></div>
-          </section>
-
-          <section class="pane question-pane">
-            <div class="pane-head">
-              <h2>Questions</h2>
+            <div class="lifecycle-card">
+              <span>Current lifecycle</span>
+              <strong id="election-dialog-lifecycle">Draft</strong>
+              <small>Settings can be edited while the election is Draft.</small>
             </div>
-
-            <form id="question-form" class="drawer-form">
-              <label>
-                <span>Question</span>
-                <textarea id="question-text" rows="2" required></textarea>
-              </label>
-              <div class="form-grid two">
-                <label>
-                  <span>Choice 1</span>
-                  <input id="choice-one" type="text" autocomplete="off" required>
-                </label>
-                <label>
-                  <span>Choice 2</span>
-                  <input id="choice-two" type="text" autocomplete="off" required>
-                </label>
+            <label>
+              <span>Title</span>
+              <input id="election-title" type="text" autocomplete="off" required>
+            </label>
+            <label>
+              <span>Description</span>
+              <textarea id="election-description" rows="2"></textarea>
+            </label>
+            <label>
+              <span>Quorum %</span>
+              <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
+            </label>
+            <label>
+              <span>Passing rule</span>
+              <div class="passing-rule-control">
+                <select id="passing-rule">
+                  <option value="simple_majority">Simple majority</option>
+                  <option value="two_thirds">Two-thirds</option>
+                  <option value="custom_threshold">Custom threshold</option>
+                </select>
+                <input id="passing-threshold" type="number" min="0" max="100" step="0.1" placeholder="Custom %">
               </div>
-              <div class="form-grid two">
-                <label>
-                  <span>Passing rule</span>
-                  <select id="passing-rule">
-                    <option value="simple_majority">Simple majority</option>
-                    <option value="two_thirds">Two-thirds</option>
-                    <option value="custom_threshold">Custom threshold</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Custom %</span>
-                  <input id="passing-threshold" type="number" min="0" max="100" step="0.1" placeholder="Optional">
-                </label>
-              </div>
-              <button class="secondary" type="submit">Add Question</button>
-              <div id="question-edit-actions" class="button-row hidden">
-                <button id="cancel-question-edit-button" class="secondary" type="button">Cancel Edit</button>
-                <button id="delete-question-button" class="danger-button" type="button">Delete Question</button>
-              </div>
-            </form>
-
-            <div id="question-list" class="question-list">
-              <p class="empty-list">Select or create an election to manage questions.</p>
+            </label>
+            <label class="check-row">
+              <input id="include-defaulters-quorum" type="checkbox">
+              <span>Allow defaulters for quorum and voting</span>
+            </label>
+            <div class="button-row">
+              <button id="save-election-button" class="primary" type="submit">Create Election</button>
+              <button id="cancel-election-settings-button" class="secondary" type="button">Cancel</button>
             </div>
-          </section>
-
-          <section class="pane proxy-pane">
-            <div class="pane-head">
-              <h2>Proxy Management</h2>
-            </div>
-
-            <form id="proxy-form" class="drawer-form">
-              <div class="form-grid two">
-                <label>
-                  <span>Grantor House ID</span>
-                  <input id="proxy-grantor-house-id" type="text" autocomplete="off" required>
-                </label>
-                <label>
-                  <span>Proxy Holder User ID</span>
-                  <input id="proxy-holder-user-id" type="text" autocomplete="off" required>
-                </label>
-              </div>
-              <label>
-                <span>Notes</span>
-                <textarea id="proxy-notes" rows="2"></textarea>
-              </label>
-              <button class="secondary" type="submit">Add Proxy</button>
-            </form>
-
-            <div id="proxy-list" class="proxy-list">
-              <p class="empty-list">No proxies configured for this election.</p>
-            </div>
-          </section>
-        </section>
+          </form>
+        </dialog>
       </section>
 
       <section id="run-view" class="app-view" aria-label="Run election">
+        <section class="election-picker" aria-label="Election selector">
+          <label class="active-election-control">
+            <span>Election</span>
+            <select id="election-select"></select>
+          </label>
+          <button id="refresh-elections" class="icon-button" type="button" aria-label="Refresh elections">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
+        </section>
+
         <section id="active-election-view" class="active-election-view">
           <section class="stage-panel" aria-label="Election stage">
             <div class="stage-heading">
@@ -205,37 +310,23 @@
 
               <div id="qr-reader" aria-live="polite"></div>
 
-              <div class="manual">
-                <label for="manual-text">Paste QR text or passcode</label>
-                <div class="manual-row">
-                  <textarea id="manual-text" rows="1" autocomplete="one-time-code" inputmode="numeric"></textarea>
-                  <button id="manual-button" class="secondary" type="button">Submit</button>
-                </div>
-              </div>
-
               <form id="manual-attendance-form" class="stacked-form compact-form">
                 <h3>Manual Attendance</h3>
-                <div class="form-grid two">
-                  <label>
-                    <span>User ID</span>
-                    <input id="manual-user-id" type="text" autocomplete="off">
-                  </label>
-                  <label>
-                    <span>House ID</span>
-                    <input id="manual-house-id" type="text" autocomplete="off">
-                  </label>
-                </div>
                 <label>
-                  <span>Name</span>
-                  <input id="manual-name" type="text" autocomplete="off">
+                  <span>Villa Number</span>
+                  <input id="manual-villa" type="text" autocomplete="off" required>
+                  <div id="manual-villa-results" class="villa-search-results" role="listbox"></div>
+                </label>
+                <label>
+                  <span>Owner Name</span>
+                  <select id="manual-owner-user-id" required>
+                    <option value="">Select villa first</option>
+                  </select>
                 </label>
                 <button class="secondary" type="submit">Add Manually</button>
               </form>
 
-              <div id="status" class="status" role="status" aria-live="polite">
-                <p class="status-title">Ready</p>
-                <p class="status-copy">Select an election, then scan or add attendance.</p>
-              </div>
+              <div id="status" class="status" role="status" aria-live="polite" hidden></div>
             </section>
 
             <section class="pane summary-pane" aria-label="Villa representation summary">
@@ -272,19 +363,107 @@
               </div>
               <p id="quorum-status" class="quorum-status">Select an election to view quorum.</p>
 
-              <div class="attendees-block">
-                <div class="pane-head compact-head">
-                  <h2>Attendees</h2>
-                  <span id="attendee-count" class="count-pill">0</span>
-                </div>
-                <div class="attendee-search">
-                  <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
-                </div>
-                <div id="attendee-list" class="attendee-list" role="list">
-                  <p class="empty-list">No attendance marked yet.</p>
+            </section>
+
+            <section class="pane voting-pane" aria-label="Voting status">
+              <div class="pane-head">
+                <h2>Voting</h2>
+                <div class="summary-actions">
+                  <button id="restart-voting-button" class="danger-button small-button" type="button" hidden>Restart Voting</button>
+                  <button id="refresh-voting-status" class="icon-button" type="button" aria-label="Refresh voting status">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
                 </div>
               </div>
+              <div class="summary-grid voting-metrics">
+                <div class="metric-block">
+                  <span>Eligible Villas</span>
+                  <strong id="vote-eligible-count">-</strong>
+                </div>
+                <div class="metric-block">
+                  <span>Votes Cast</span>
+                  <strong id="vote-submitted-count">-</strong>
+                </div>
+                <div class="metric-block">
+                  <span>Pending</span>
+                  <strong id="vote-pending-count">-</strong>
+                </div>
+                <div class="metric-block">
+                  <span>Voting Status</span>
+                  <strong id="vote-status-label">-</strong>
+                </div>
+              </div>
+              <p id="voting-status-copy" class="quorum-status">Select an election to view voting status.</p>
+              <div id="officer-results" class="results-list"></div>
             </section>
+
+            <section class="pane attendees-pane" aria-label="Attendees and vote status">
+              <div class="pane-head compact-head">
+                <h2>Attendees</h2>
+                <span id="attendee-count" class="count-pill">0</span>
+              </div>
+              <div class="attendee-tools">
+                <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
+                <select id="attendee-filter" aria-label="Filter attendees">
+                  <option value="all">All attendees</option>
+                  <option value="pending">Attended, not voted</option>
+                  <option value="voted">Voted</option>
+                </select>
+              </div>
+              <div id="attendee-list" class="attendee-list" role="list">
+                <p class="empty-list">No attendance marked yet.</p>
+              </div>
+            </section>
+          </section>
+        </section>
+      </section>
+
+      <section id="voter-view" class="app-view" aria-label="Voter portal">
+        <section class="voter-layout">
+          <section class="pane voter-login-pane">
+            <div class="pane-head">
+              <h2>Voter Login</h2>
+              <button id="voter-logout-button" class="secondary small-button" type="button" hidden>Logout</button>
+            </div>
+            <ol class="scan-steps" aria-label="MyGate QR voter steps">
+              <li>Open your MyGate app</li>
+              <li>Press your profile icon on top right</li>
+              <li>Press your QR code next to MyGate ID and scan here</li>
+            </ol>
+            <div class="actions">
+              <button id="voter-scan-button" class="primary" type="button">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                </svg>
+                <span>Scan QR</span>
+              </button>
+              <label class="file-button" for="voter-qr-file">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M12 16V4m0 0 4 4m-4-4-4 4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>Upload QR</span>
+              </label>
+              <input id="voter-qr-file" type="file" accept="image/*">
+            </div>
+            <div id="voter-qr-reader" aria-live="polite"></div>
+            <div id="voter-status" class="status" role="status" aria-live="polite" hidden></div>
+            <div id="voter-identity" class="resident" hidden></div>
+          </section>
+
+          <section class="pane voter-elections-pane">
+            <div class="pane-head">
+              <h2>My Elections</h2>
+              <button id="refresh-voter-dashboard" class="icon-button" type="button" aria-label="Refresh voter dashboard">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </button>
+            </div>
+            <div id="voter-election-list" class="voter-election-list">
+              <p class="empty-list">Scan or upload your MyGate QR to view elections.</p>
+            </div>
           </section>
         </section>
       </section>
