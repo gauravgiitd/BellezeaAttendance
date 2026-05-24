@@ -983,34 +983,58 @@ function renderAttendees() {
   const query = attendeeSearchInput.value.trim().toLowerCase();
   const filter = attendeeFilterSelect.value;
   const filtered = dashboardAttendees.filter((attendee) => {
+    const peopleText = (attendee.participants || [])
+      .map((person) => `${person.name || ''} ${person.user_type || ''}`)
+      .join(' ');
     const matchesQuery = !query
-      || `${attendee.name || ''} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.voteSubmittedByName || ''}`.toLowerCase().includes(query);
+      || `${peopleText} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.voteSubmittedByName || ''}`.toLowerCase().includes(query);
     const matchesFilter = filter === 'all'
-      || (filter === 'pending' && !attendee.hasVoted)
+      || (filter === 'pending' && attendee.counted && !attendee.hasVoted)
       || (filter === 'voted' && attendee.hasVoted);
     return matchesQuery && matchesFilter;
   });
 
   attendeeListElement.innerHTML = filtered.length
     ? filtered.map(attendeeRowHtml).join('')
-    : `<p class="empty-list">${dashboardAttendees.length ? 'No attendees match this search.' : 'No attendance marked yet.'}</p>`;
+    : `<p class="empty-list">${dashboardAttendees.length ? 'No villas match this search.' : 'No attendance marked yet.'}</p>`;
 }
 
 function attendeeRowHtml(attendee) {
-  const voteCopy = attendee.hasVoted
+  const voteCopy = !attendee.counted
+    ? 'Defaulter: not counted for quorum or voting'
+    : attendee.hasVoted
     ? `Voted by ${attendee.voteSubmittedByName || 'owner'}${attendee.votedAt ? ` | ${formatDateTime(attendee.votedAt)}` : ''}`
     : 'Not voted';
+  const rowLabels = [
+    attendee.isProxy ? 'Proxy' : 'Actual',
+    attendee.isDefaulter ? 'Defaulter' : '',
+    attendee.counted ? '' : 'Not counted',
+  ].filter(Boolean);
+  const participantRows = (attendee.participants || []).map((person) => `
+    <li>
+      <strong>${escapeHtml(person.name || '-')}</strong>
+      <span>${escapeHtml([
+        attendee.isProxy ? `Representing from ${person.house_no || person.house_id || '-'}` : person.user_type,
+        attendee.isProxy ? person.user_type : '',
+        formatDateTime(person.attended_at),
+      ].filter(Boolean).join(' | '))}</span>
+    </li>
+  `).join('');
   return `
-    <div class="attendee-row ${attendee.hasVoted ? 'has-voted' : ''}" role="listitem">
-      <span>
-        <strong>${escapeHtml(attendee.name || '-')}</strong>
-        <small>${escapeHtml([attendee.userType, formatDateTime(attendee.attendanceTime)].filter(Boolean).join(' | '))}</small>
+    <div class="attendee-row ${attendee.hasVoted ? 'has-voted' : ''} ${attendee.counted ? '' : 'not-counted'}" role="listitem">
+      <div>
+        <div class="attendee-villa-head">
+          <strong>${escapeHtml(attendee.flat || '-')}</strong>
+          <span>${escapeHtml(rowLabels.join(' | '))}</span>
+        </div>
+        <ul class="attendee-people">
+          ${participantRows || '<li><span>No attendee details</span></li>'}
+        </ul>
         <small>${escapeHtml(voteCopy)}</small>
-      </span>
-      <span>
-        <span class="villa-tag">${escapeHtml(attendee.flat || '-')}</span>
-        <span class="vote-tag ${attendee.hasVoted ? 'voted' : 'pending'}">${attendee.hasVoted ? 'Voted' : 'Pending'}</span>
-      </span>
+      </div>
+      <div>
+        <span class="vote-tag ${!attendee.counted ? 'excluded' : attendee.hasVoted ? 'voted' : 'pending'}">${!attendee.counted ? 'Excluded' : attendee.hasVoted ? 'Voted' : 'Pending'}</span>
+      </div>
     </div>
   `;
 }

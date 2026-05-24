@@ -1124,6 +1124,11 @@ select:focus {
   background: #f0fdf4;
 }
 
+.attendee-row.not-counted {
+  border-color: rgba(164, 91, 0, 0.24);
+  background: #fff7ed;
+}
+
 .attendee-row strong,
 .attendee-row span {
   min-width: 0;
@@ -1141,17 +1146,45 @@ select:focus {
   color: var(--muted);
 }
 
-.villa-tag {
-  display: block;
-  max-width: 150px;
+.attendee-villa-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.attendee-villa-head > span {
   border-radius: 999px;
-  padding: 3px 7px;
-  background: #e6f4f0;
-  color: var(--brand-strong);
+  padding: 2px 7px;
+  color: var(--muted);
+  background: #fff;
+  border: 1px solid var(--line);
   font-size: 0.66rem;
   font-weight: 800;
-  text-align: right;
-  overflow-wrap: anywhere;
+}
+
+.attendee-people {
+  display: grid;
+  gap: 3px;
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attendee-people li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: baseline;
+}
+
+.attendee-people strong {
+  font-size: 0.74rem;
+}
+
+.attendee-people span {
+  color: var(--muted);
+  font-size: 0.68rem;
 }
 
 .vote-tag {
@@ -1174,6 +1207,11 @@ select:focus {
 .vote-tag.pending {
   color: var(--warn);
   background: #fff7ed;
+}
+
+.vote-tag.excluded {
+  color: var(--muted);
+  background: #eef2f7;
 }
 
 .empty-list {

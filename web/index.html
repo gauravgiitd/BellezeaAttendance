@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nambiar Bellezea Elections</title>
-    <link rel="stylesheet" href="styles.css?v=20260524-15">
+    <link rel="stylesheet" href="styles.css?v=20260524-16">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260524-15" defer></script>
-    <script src="app.js?v=20260524-15" defer></script>
+    <script src="config.js?v=20260524-16" defer></script>
+    <script src="app.js?v=20260524-16" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -400,16 +400,16 @@
               <div id="officer-results" class="results-list"></div>
             </section>
 
-            <section class="pane attendees-pane" aria-label="Attendees and vote status">
+            <section class="pane attendees-pane" aria-label="Attending villas and vote status">
               <div class="pane-head compact-head">
-                <h2>Attendees</h2>
+                <h2>Attending Villas</h2>
                 <span id="attendee-count" class="count-pill">0</span>
               </div>
               <div class="attendee-tools">
-                <input id="attendee-search" type="search" autocomplete="off" placeholder="Search name or villa" aria-label="Search attendees by name or villa">
+                <input id="attendee-search" type="search" autocomplete="off" placeholder="Search villa or name" aria-label="Search villas or attendees by name">
                 <select id="attendee-filter" aria-label="Filter attendees">
-                  <option value="all">All attendees</option>
-                  <option value="pending">Attended, not voted</option>
+                  <option value="all">All villas</option>
+                  <option value="pending">Represented, not voted</option>
                   <option value="voted">Voted</option>
                 </select>
               </div>

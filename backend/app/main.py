@@ -993,53 +993,7 @@ def attendance_dashboard(election_id: str) -> dict[str, Any]:
             election = fetch_election_summary(cur, election_id)
             if not election:
                 raise HTTPException(status_code=404, detail="Election not found")
-            cur.execute(
-                """
-                SELECT ar.id, ar.method, ar.source, ar.attended_at,
-                  r.user_id, r.name, r.user_type, r.status,
-                  v.house_id, v.house_no,
-                  b.submitted_at AS voted_at,
-                  submitter.name AS vote_submitted_by_name,
-                  submitter.user_id AS vote_submitted_by_user_id
-                FROM attendance_records ar
-                JOIN residents r
-                  ON r.user_id = ar.resident_user_id
-                 AND r.house_id = ar.house_id
-                JOIN villas v ON v.house_id = ar.house_id
-                LEFT JOIN ballots b
-                  ON b.election_id = ar.election_id
-                 AND b.house_id = ar.house_id
-                LEFT JOIN LATERAL (
-                  SELECT sr.user_id, sr.name
-                  FROM residents sr
-                  WHERE sr.user_id = b.submitted_by_user_id
-                  ORDER BY position('owner' in lower(sr.user_type)) DESC, sr.updated_at DESC
-                  LIMIT 1
-                ) submitter ON true
-                WHERE ar.election_id = %s
-                ORDER BY ar.attended_at DESC
-                """,
-                (election_id,),
-            )
-            attendees = [
-                {
-                    "id": str(row["id"]),
-                    "user_id": row["user_id"],
-                    "house_id": row["house_id"],
-                    "name": row["name"],
-                    "flat": row["house_no"],
-                    "userType": row["user_type"],
-                    "status": row["status"],
-                    "method": row["method"],
-                    "source": row["source"],
-                    "attendanceTime": row["attended_at"],
-                    "hasVoted": bool(row["voted_at"]),
-                    "votedAt": row["voted_at"],
-                    "voteSubmittedByName": row["vote_submitted_by_name"],
-                    "voteSubmittedByUserId": row["vote_submitted_by_user_id"],
-                }
-                for row in cur.fetchall()
-            ]
+            attendees = attendance_villa_rows(cur, election)
     election_data = election_public(election)
     represented = election_data["represented_villas"]
     eligible = election_data["eligible_villas"]
@@ -1369,6 +1323,211 @@ def election_voting_status(election_id: str) -> dict[str, Any]:
         "voted_villas": voted_villas,
         "pending_villas": max(represented_villas - voted_villas, 0),
         "results": results,
+    }
+
+
+def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]:
+    election_id = str(election["id"])
+    include_defaulters = bool(election["include_defaulters_in_quorum"])
+    rows: list[dict[str, Any]] = []
+
+    cur.execute(
+        """
+        SELECT v.house_id, v.house_no,
+          EXISTS (
+            SELECT 1 FROM defaulters d
+            WHERE d.house_id = v.house_id AND d.status = 'active'
+          ) AS is_defaulter,
+          MAX(ar.attended_at) AS last_attended_at,
+          jsonb_agg(
+              jsonb_build_object(
+                'user_id', r.user_id,
+                'name', r.name,
+                'user_type', r.user_type,
+                'status', r.status,
+                'house_id', r.house_id,
+                'house_no', v.house_no,
+                'attended_at', ar.attended_at,
+                'method', ar.method,
+                'source', ar.source
+            )
+            ORDER BY ar.attended_at
+          ) AS participants,
+          b.submitted_at AS voted_at,
+          submitter.name AS vote_submitted_by_name,
+          submitter.user_id AS vote_submitted_by_user_id
+        FROM attendance_records ar
+        JOIN residents r
+          ON r.user_id = ar.resident_user_id
+         AND r.house_id = ar.house_id
+        JOIN villas v ON v.house_id = ar.house_id
+        LEFT JOIN ballots b
+          ON b.election_id = ar.election_id
+         AND b.house_id = ar.house_id
+        LEFT JOIN LATERAL (
+          SELECT sr.user_id, sr.name
+          FROM residents sr
+          WHERE sr.user_id = b.submitted_by_user_id
+          ORDER BY position('owner' in lower(sr.user_type)) DESC, sr.updated_at DESC
+          LIMIT 1
+        ) submitter ON true
+        WHERE ar.election_id = %s
+        GROUP BY v.house_id, v.house_no, b.submitted_at,
+          submitter.name, submitter.user_id
+        """,
+        (election_id,),
+    )
+    for row in cur.fetchall():
+        is_defaulter = bool(row["is_defaulter"])
+        rows.append(attendance_villa_row_public(
+            row,
+            representation_type="self",
+            participants=row["participants"] or [],
+            is_defaulter=is_defaulter,
+            counted=include_defaulters or not is_defaulter,
+        ))
+
+    cur.execute(
+        """
+        SELECT v.house_id, v.house_no,
+          EXISTS (
+            SELECT 1 FROM defaulters d
+            WHERE d.house_id = v.house_id AND d.status = 'active'
+          ) AS is_defaulter,
+          ar.attended_at AS last_attended_at,
+          jsonb_build_array(
+            jsonb_build_object(
+              'user_id', r.user_id,
+              'name', r.name,
+              'user_type', r.user_type,
+              'status', r.status,
+              'house_id', r.house_id,
+              'house_no', rv.house_no,
+              'attended_at', ar.attended_at,
+              'method', ar.method,
+              'source', ar.source
+            )
+          ) AS participants,
+          b.submitted_at AS voted_at,
+          submitter.name AS vote_submitted_by_name,
+          submitter.user_id AS vote_submitted_by_user_id
+        FROM villa_representations vr
+        JOIN villas v ON v.house_id = vr.house_id
+        JOIN attendance_records ar ON ar.id = vr.source_attendance_record_id
+        JOIN villas rv ON rv.house_id = ar.house_id
+        JOIN residents r
+          ON r.user_id = ar.resident_user_id
+         AND r.house_id = ar.house_id
+        LEFT JOIN ballots b
+          ON b.election_id = vr.election_id
+         AND b.house_id = vr.house_id
+        LEFT JOIN LATERAL (
+          SELECT sr.user_id, sr.name
+          FROM residents sr
+          WHERE sr.user_id = b.submitted_by_user_id
+          ORDER BY position('owner' in lower(sr.user_type)) DESC, sr.updated_at DESC
+          LIMIT 1
+        ) submitter ON true
+        WHERE vr.election_id = %s
+          AND vr.representation_type = 'proxy'
+        """,
+        (election_id,),
+    )
+    for row in cur.fetchall():
+        is_defaulter = bool(row["is_defaulter"])
+        rows.append(attendance_villa_row_public(
+            row,
+            representation_type="proxy",
+            participants=row["participants"] or [],
+            is_defaulter=is_defaulter,
+            counted=include_defaulters or not is_defaulter,
+        ))
+
+    if not include_defaulters:
+        cur.execute(
+            """
+            SELECT v.house_id, v.house_no,
+              true AS is_defaulter,
+              MAX(ar.attended_at) AS last_attended_at,
+              jsonb_agg(
+                jsonb_build_object(
+                  'user_id', r.user_id,
+                  'name', r.name,
+                  'user_type', r.user_type,
+                  'status', r.status,
+                  'house_id', r.house_id,
+                  'house_no', rv.house_no,
+                  'attended_at', ar.attended_at,
+                  'method', ar.method,
+                  'source', ar.source
+                )
+                ORDER BY ar.attended_at
+              ) AS participants,
+              NULL::timestamptz AS voted_at,
+              NULL::text AS vote_submitted_by_name,
+              NULL::text AS vote_submitted_by_user_id
+            FROM attendance_records ar
+            JOIN proxies p
+              ON p.proxy_holder_user_id = ar.resident_user_id
+             AND p.status = 'active'
+             AND (p.election_id IS NULL OR p.election_id = ar.election_id)
+            JOIN villas v ON v.house_id = p.grantor_house_id
+            JOIN villas rv ON rv.house_id = ar.house_id
+            JOIN defaulters d
+              ON d.house_id = p.grantor_house_id
+             AND d.status = 'active'
+            JOIN residents r
+              ON r.user_id = ar.resident_user_id
+             AND r.house_id = ar.house_id
+            LEFT JOIN villa_representations vr
+              ON vr.election_id = ar.election_id
+             AND vr.house_id = p.grantor_house_id
+            WHERE ar.election_id = %s
+              AND vr.house_id IS NULL
+            GROUP BY v.house_id, v.house_no
+            """,
+            (election_id,),
+        )
+        for row in cur.fetchall():
+            rows.append(attendance_villa_row_public(
+                row,
+                representation_type="proxy",
+                participants=row["participants"] or [],
+                is_defaulter=True,
+                counted=False,
+            ))
+
+    return sorted(
+        rows,
+        key=lambda item: (
+            0 if item["counted"] else 1,
+            -(item["lastAttendanceTime"].timestamp() if item["lastAttendanceTime"] else 0),
+            item["flat"],
+        ),
+    )
+
+
+def attendance_villa_row_public(
+    row: dict[str, Any],
+    representation_type: str,
+    participants: list[dict[str, Any]],
+    is_defaulter: bool,
+    counted: bool,
+) -> dict[str, Any]:
+    return {
+        "id": f"{representation_type}:{row['house_id']}",
+        "house_id": row["house_id"],
+        "flat": row["house_no"],
+        "representationType": representation_type,
+        "isProxy": representation_type == "proxy",
+        "isDefaulter": is_defaulter,
+        "counted": counted,
+        "participants": participants,
+        "lastAttendanceTime": row["last_attended_at"],
+        "hasVoted": bool(row["voted_at"]),
+        "votedAt": row["voted_at"],
+        "voteSubmittedByName": row["vote_submitted_by_name"],
+        "voteSubmittedByUserId": row["vote_submitted_by_user_id"],
     }
 
 
