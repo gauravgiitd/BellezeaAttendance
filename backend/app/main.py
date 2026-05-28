@@ -1014,6 +1014,92 @@ def attendance_dashboard(election_id: str) -> dict[str, Any]:
     return attendance_dashboard_payload(election_id)
 
 
+@app.delete("/api/elections/{election_id}/attendance/{house_id}", dependencies=[Depends(require_officer)])
+def remove_actual_attendance(election_id: str, house_id: str) -> dict[str, Any]:
+    normalized_house_id = normalize_id(house_id)
+    with connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
+            election = cur.fetchone()
+            if not election:
+                raise HTTPException(status_code=404, detail="Election not found")
+            if election["status"] not in ATTENDANCE_OPEN_STATUSES:
+                raise HTTPException(status_code=409, detail="Attendance can be removed only during Attendance or Voting")
+
+            cur.execute(
+                """
+                SELECT id
+                FROM attendance_records
+                WHERE election_id = %s
+                  AND house_id = %s
+                """,
+                (election_id, normalized_house_id),
+            )
+            attendance_ids = [row["id"] for row in cur.fetchall()]
+            if not attendance_ids:
+                raise HTTPException(status_code=404, detail="Actual attendance was not found for this villa")
+
+            cur.execute(
+                """
+                SELECT DISTINCT house_id
+                FROM villa_representations
+                WHERE election_id = %s
+                  AND (
+                    source_attendance_record_id = ANY(%s)
+                    OR (house_id = %s AND representation_type = 'self')
+                  )
+                """,
+                (election_id, attendance_ids, normalized_house_id),
+            )
+            represented_house_ids = [row["house_id"] for row in cur.fetchall()]
+            if represented_house_ids:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS ballot_count
+                    FROM ballots
+                    WHERE election_id = %s
+                      AND house_id = ANY(%s)
+                    """,
+                    (election_id, represented_house_ids),
+                )
+                if int(cur.fetchone()["ballot_count"] or 0):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cannot remove attendance after votes have been submitted for this villa or its proxies",
+                    )
+
+            cur.execute(
+                """
+                DELETE FROM villa_representations
+                WHERE election_id = %s
+                  AND (
+                    source_attendance_record_id = ANY(%s)
+                    OR (house_id = %s AND representation_type = 'self')
+                  )
+                RETURNING house_id, representation_type
+                """,
+                (election_id, attendance_ids, normalized_house_id),
+            )
+            removed_representations = cur.fetchall()
+
+            cur.execute(
+                """
+                DELETE FROM attendance_records
+                WHERE election_id = %s
+                  AND house_id = %s
+                RETURNING id
+                """,
+                (election_id, normalized_house_id),
+            )
+            removed_attendance = cur.fetchall()
+        conn.commit()
+    return {
+        "removed_attendance_records": len(removed_attendance),
+        "removed_representations": len(removed_representations),
+        "removed_proxy_villas": sum(1 for row in removed_representations if row["representation_type"] == "proxy"),
+    }
+
+
 @app.get("/api/public/attendance-board")
 def public_attendance_board() -> dict[str, Any]:
     with connection() as conn:

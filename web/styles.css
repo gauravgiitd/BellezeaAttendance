@@ -1237,6 +1237,15 @@ select:focus {
   background: #eef2f7;
 }
 
+.remove-attendance-button {
+  display: block;
+  min-height: 26px;
+  margin-top: 6px;
+  margin-left: auto;
+  padding: 3px 8px;
+  font-size: 0.66rem;
+}
+
 .empty-list {
   color: var(--muted);
   line-height: 1.3;

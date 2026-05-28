@@ -119,6 +119,7 @@ class RegressionHarness:
             self.test_defaulter_exclusion_and_inclusion,
             self.test_proxy_management_and_reports,
             self.test_proxy_holder_can_be_any_owner_in_attending_villa,
+            self.test_remove_actual_attendance_removes_owner_and_proxy_villas,
             self.test_defaulter_proxy_report_exclusion,
             self.test_voting_ballots_results_and_restart,
             self.test_public_attendance_board,
@@ -253,6 +254,9 @@ class RegressionHarness:
             election_id,
             self.api.AttendanceQrRequest(qr_raw_data=qr_raw_data, method="qr_scan", source="regression"),
         )
+
+    def remove_attendance(self, election_id: str, house_id: str) -> dict[str, Any]:
+        return self.api.remove_actual_attendance(election_id, house_id)
 
     def create_proxy(
         self,
@@ -538,6 +542,27 @@ class RegressionHarness:
         assert self.csv_rows(self.api.proxy_holder_email_report(election_id)) == [
             {"Email": "second.owner.proxy@example.com"}
         ]
+
+    def test_remove_actual_attendance_removes_owner_and_proxy_villas(self) -> None:
+        election = self.create_election("remove actual attendance")
+        election_id = election["id"]
+        self.create_proxy(election_id, grantor_house_id=VILLA_C, proxy_holder_user_id=OWNER_A2, proxy_holder_house_id=VILLA_A)
+
+        self.set_status(election_id, "attendance_open")
+        self.mark_manual(election_id, VILLA_A)
+        assert self.dashboard_row(election_id, VILLA_A, "self")["counted"] is True
+        assert self.dashboard_row(election_id, VILLA_C, "proxy")["counted"] is True
+
+        removed = self.remove_attendance(election_id, VILLA_A)
+        assert removed["removed_attendance_records"] == 2
+        assert removed["removed_representations"] == 2
+        assert removed["removed_proxy_villas"] == 1
+
+        dashboard = self.api.attendance_dashboard(election_id)
+        assert dashboard["representedVillas"] == 0
+        assert not any(row["house_id"] in {VILLA_A, VILLA_C} for row in dashboard["attendees"])
+        assert self.csv_rows(self.api.actual_attendee_report(election_id)) == []
+        assert self.csv_lines(self.api.proxy_holder_email_report(election_id)) == ["Email"]
 
     def test_defaulter_proxy_report_exclusion(self) -> None:
         election = self.create_election("defaulter proxy excluded")

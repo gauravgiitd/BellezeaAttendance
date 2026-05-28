@@ -40,6 +40,7 @@ const electionDescriptionInput = document.querySelector('#election-description')
 const electionQuorumInput = document.querySelector('#election-quorum');
 const votingEnabledInput = document.querySelector('#voting-enabled');
 const includeDefaultersQuorumInput = document.querySelector('#include-defaulters-quorum');
+const questionPaneElement = document.querySelector('#question-pane');
 const questionForm = document.querySelector('#question-form');
 const questionTextInput = document.querySelector('#question-text');
 const choiceListElement = document.querySelector('#choice-list');
@@ -73,7 +74,9 @@ const questionLockInfoElement = document.querySelector('#question-lock-info');
 const proxyLockInfoElement = document.querySelector('#proxy-lock-info');
 const defaulterLockInfoElement = document.querySelector('#defaulter-lock-info');
 const manageQuorumSummaryElement = document.querySelector('#manage-quorum-summary');
+const manageQuestionMetricElement = document.querySelector('#manage-question-metric');
 const manageQuestionCountElement = document.querySelector('#manage-question-count');
+const managePassingRuleMetricElement = document.querySelector('#manage-passing-rule-metric');
 const managePassingRuleSummaryElement = document.querySelector('#manage-passing-rule-summary');
 const manageDefaulterSummaryElement = document.querySelector('#manage-defaulter-summary');
 const electionLibraryListElement = document.querySelector('#election-library-list');
@@ -768,6 +771,9 @@ function syncManageLocks() {
     cancelElectionSettingsButton.disabled = false;
   }
   setFormDisabled(questionForm, questionLocked);
+  if (questionPaneElement) {
+    questionPaneElement.hidden = Boolean(activeElection && !votingEnabled(activeElection));
+  }
   setFormDisabled(proxyForm, proxyLocked);
   setFormDisabled(defaulterForm, setupLocked);
   newElectionButton.disabled = false;
@@ -818,7 +824,9 @@ function renderManageSummary() {
     manageElectionTitleElement.textContent = 'Select an election';
     manageElectionDescriptionElement.textContent = 'Create or select an election to manage its questions and proxies.';
     manageQuorumSummaryElement.textContent = '-';
+    manageQuestionMetricElement.hidden = false;
     manageQuestionCountElement.textContent = '0';
+    managePassingRuleMetricElement.hidden = false;
     managePassingRuleSummaryElement.textContent = '-';
     manageDefaulterSummaryElement.textContent = '-';
     editElectionButton.disabled = true;
@@ -830,7 +838,9 @@ function renderManageSummary() {
   manageElectionTitleElement.textContent = activeElection.title || 'Untitled election';
   manageElectionDescriptionElement.textContent = activeElection.description || 'No description added.';
   manageQuorumSummaryElement.textContent = `${formatPct(activeElection.quorum_percent)}%`;
+  manageQuestionMetricElement.hidden = !votingEnabled(activeElection);
   manageQuestionCountElement.textContent = formatInt(questions.length);
+  managePassingRuleMetricElement.hidden = !votingEnabled(activeElection);
   managePassingRuleSummaryElement.textContent = votingEnabled(activeElection)
     ? passingRuleLabel(activeElection.passing_rule, activeElection.passing_threshold_percent)
     : 'Voting off';
@@ -1031,7 +1041,7 @@ function renderAttendees() {
   const filtered = filterAttendees(dashboardAttendees, { query, filter, showVoting });
 
   attendeeListElement.innerHTML = filtered.length
-    ? filtered.map((attendee) => attendeeRowHtml(attendee, { showVoting })).join('')
+    ? filtered.map((attendee) => attendeeRowHtml(attendee, { showVoting, allowRemove: true })).join('')
     : `<p class="empty-list">${dashboardAttendees.length ? 'No villas match this search.' : 'No attendance marked yet.'}</p>`;
 }
 
@@ -1057,6 +1067,7 @@ function attendeeSearchText(attendee) {
 
 function attendeeRowHtml(attendee, options = {}) {
   const showVoting = options.showVoting !== false;
+  const canRemove = Boolean(options.allowRemove && !attendee.isProxy);
   const searchText = attendeeSearchText(attendee);
   const voteCopy = !showVoting
     ? (attendee.counted ? 'Counted for quorum' : 'Defaulter: not counted for quorum')
@@ -1094,9 +1105,45 @@ function attendeeRowHtml(attendee, options = {}) {
       </div>
       <div>
         <span class="vote-tag ${!attendee.counted ? 'excluded' : showVoting && attendee.hasVoted ? 'voted' : 'pending'}">${!attendee.counted ? 'Excluded' : showVoting ? (attendee.hasVoted ? 'Voted' : 'Pending') : 'Counted'}</span>
+        ${canRemove ? `
+          <button
+            class="icon-text-button danger-button remove-attendance-button"
+            type="button"
+            data-remove-attendance
+            data-house-id="${escapeHtml(attendee.house_id || '')}"
+            data-flat="${escapeHtml(attendee.flat || '')}"
+          >Remove</button>
+        ` : ''}
       </div>
     </div>
   `;
+}
+
+async function removeActualAttendance(houseId, flat) {
+  if (!activeElectionId() || submitting) return;
+  const label = flat || 'this villa';
+  const confirmed = window.confirm(
+    `Remove attendance for ${label}? This will remove all owners for this villa and any proxy villas represented by them.`
+  );
+  if (!confirmed) return;
+
+  submitting = true;
+  setStatus('', 'Removing attendance', `Removing ${label} and related proxy representations.`);
+  try {
+    const response = await apiRequest(
+      `/api/elections/${encodeURIComponent(activeElectionId())}/attendance/${encodeURIComponent(houseId)}`,
+      { method: 'DELETE' }
+    );
+    const proxyCopy = response.removed_proxy_villas
+      ? ` Also removed ${formatInt(response.removed_proxy_villas)} proxy villa${response.removed_proxy_villas === 1 ? '' : 's'}.`
+      : '';
+    setStatus('success', 'Attendance removed', `${label} was removed.${proxyCopy}`);
+    await loadDashboard();
+  } catch (error) {
+    setStatus('error', 'Could not remove attendance', error.message || 'Please try again.');
+  } finally {
+    submitting = false;
+  }
 }
 
 async function loadDashboard() {
@@ -2223,6 +2270,12 @@ refreshElectionLibraryButton.addEventListener('click', loadElections);
 syncResidentsButton.addEventListener('click', syncResidentsFromMaster);
 attendeeSearchInput.addEventListener('input', renderAttendees);
 attendeeFilterSelect.addEventListener('change', renderAttendees);
+attendeeListElement.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-remove-attendance]');
+  if (button) {
+    removeActualAttendance(button.dataset.houseId, button.dataset.flat);
+  }
+});
 electionForm.addEventListener('submit', saveElection);
 passingRuleSelect.addEventListener('change', syncPassingRuleControl);
 votingEnabledInput.addEventListener('change', syncPassingRuleControl);
