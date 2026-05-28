@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS elections (
   description text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'draft',
   quorum_percent numeric(6,3) NOT NULL DEFAULT 50.000,
+  voting_enabled boolean NOT NULL DEFAULT true,
   passing_rule text NOT NULL DEFAULT 'simple_majority',
   passing_threshold_percent numeric(6,3),
   include_defaulters_in_quorum boolean NOT NULL DEFAULT false,
@@ -92,6 +93,9 @@ ALTER TABLE elections
 
 ALTER TABLE elections
   ADD COLUMN IF NOT EXISTS passing_threshold_percent numeric(6,3);
+
+ALTER TABLE elections
+  ADD COLUMN IF NOT EXISTS voting_enabled boolean NOT NULL DEFAULT true;
 
 DO $$
 BEGIN
@@ -138,6 +142,7 @@ CREATE TABLE IF NOT EXISTS proxies (
   grantor_house_id text NOT NULL REFERENCES villas(house_id),
   proxy_holder_user_id text NOT NULL,
   proxy_holder_house_id text NOT NULL,
+  proxy_holder_email text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'active',
   notes text NOT NULL DEFAULT '',
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -148,6 +153,9 @@ CREATE TABLE IF NOT EXISTS proxies (
 
 ALTER TABLE proxies
   ADD COLUMN IF NOT EXISTS proxy_holder_house_id text;
+
+ALTER TABLE proxies
+  ADD COLUMN IF NOT EXISTS proxy_holder_email text NOT NULL DEFAULT '';
 
 UPDATE proxies p
 SET proxy_holder_house_id = r.house_id
@@ -187,6 +195,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_active_proxy_per_grantor_election
 
 CREATE TABLE IF NOT EXISTS defaulters (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  election_id uuid REFERENCES elections(id) ON DELETE CASCADE,
   house_id text NOT NULL REFERENCES villas(house_id),
   reason text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'active',
@@ -197,9 +206,14 @@ CREATE TABLE IF NOT EXISTS defaulters (
   CONSTRAINT defaulters_status_check CHECK (status IN ('active', 'cleared'))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_active_defaulter_per_villa
-  ON defaulters(house_id)
-  WHERE status = 'active';
+ALTER TABLE defaulters
+  ADD COLUMN IF NOT EXISTS election_id uuid REFERENCES elections(id) ON DELETE CASCADE;
+
+DROP INDEX IF EXISTS idx_active_defaulter_per_villa;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_active_defaulter_per_election_villa
+  ON defaulters(election_id, house_id)
+  WHERE status = 'active' AND election_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

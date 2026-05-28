@@ -510,6 +510,13 @@ h2 {
   grid-area: attendees;
 }
 
+.active-election-view.attendance-only .meeting-grid {
+  grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.1fr);
+  grid-template-areas:
+    "attendance quorum"
+    "attendance attendees";
+}
+
 .manage-layout .drawer-form,
 .question-pane .drawer-form,
 .proxy-pane .drawer-form,
@@ -539,6 +546,10 @@ h2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.report-actions {
+  flex-wrap: wrap;
 }
 
 .scan-steps {
@@ -1084,6 +1095,10 @@ select:focus {
   margin-bottom: 8px;
 }
 
+.attendee-tools.no-filter {
+  grid-template-columns: minmax(180px, 1fr);
+}
+
 .attendee-tools input,
 .attendee-tools select {
   width: 100%;
@@ -1108,6 +1123,10 @@ select:focus {
   padding-right: 2px;
 }
 
+.attendance-board-list.attendee-list {
+  max-height: none;
+}
+
 .attendee-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1117,6 +1136,10 @@ select:focus {
   border-radius: 8px;
   padding: 8px;
   background: var(--soft);
+}
+
+.attendee-row[hidden] {
+  display: none;
 }
 
 .attendee-row.has-voted {
@@ -1325,6 +1348,10 @@ select:focus {
   gap: 8px;
 }
 
+.public-election-picker {
+  margin-bottom: 8px;
+}
+
 .voter-election-card,
 .voter-house-card,
 .voter-ballot-form,
@@ -1339,6 +1366,17 @@ select:focus {
 .voter-election-card {
   display: grid;
   gap: 10px;
+}
+
+.public-election-block {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.inline-panel-head {
+  margin-top: 2px;
+  margin-bottom: 0;
 }
 
 .voter-election-head,

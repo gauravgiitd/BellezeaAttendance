@@ -3,7 +3,6 @@ const fileInput = document.querySelector('#qr-file');
 const manualAttendanceForm = document.querySelector('#manual-attendance-form');
 const manualVillaInput = document.querySelector('#manual-villa');
 const manualVillaResults = document.querySelector('#manual-villa-results');
-const manualOwnerSelect = document.querySelector('#manual-owner-user-id');
 const readerElement = document.querySelector('#qr-reader');
 const statusElement = document.querySelector('#status');
 const totalVillasElement = document.querySelector('#total-villas');
@@ -22,6 +21,7 @@ const votePendingCountElement = document.querySelector('#vote-pending-count');
 const voteStatusLabelElement = document.querySelector('#vote-status-label');
 const votingStatusCopyElement = document.querySelector('#voting-status-copy');
 const officerResultsElement = document.querySelector('#officer-results');
+const votingPaneElement = document.querySelector('.voting-pane');
 const refreshVotingStatusButton = document.querySelector('#refresh-voting-status');
 const restartVotingButton = document.querySelector('#restart-voting-button');
 const dashboardUpdatedElement = document.querySelector('#dashboard-updated');
@@ -38,6 +38,7 @@ const cancelElectionSettingsButton = document.querySelector('#cancel-election-se
 const electionTitleInput = document.querySelector('#election-title');
 const electionDescriptionInput = document.querySelector('#election-description');
 const electionQuorumInput = document.querySelector('#election-quorum');
+const votingEnabledInput = document.querySelector('#voting-enabled');
 const includeDefaultersQuorumInput = document.querySelector('#include-defaulters-quorum');
 const questionForm = document.querySelector('#question-form');
 const questionTextInput = document.querySelector('#question-text');
@@ -87,6 +88,7 @@ const proxyGrantorVillaResults = document.querySelector('#proxy-grantor-villa-re
 const proxyHolderVillaInput = document.querySelector('#proxy-holder-villa');
 const proxyHolderVillaResults = document.querySelector('#proxy-holder-villa-results');
 const proxyHolderUserSelect = document.querySelector('#proxy-holder-user-id');
+const proxyHolderEmailInput = document.querySelector('#proxy-holder-email');
 const proxyListElement = document.querySelector('#proxy-list');
 const defaulterForm = document.querySelector('#defaulter-form');
 const defaulterVillaInput = document.querySelector('#defaulter-villa');
@@ -104,23 +106,23 @@ const voterIdentityElement = document.querySelector('#voter-identity');
 const voterElectionListElement = document.querySelector('#voter-election-list');
 const voterLogoutButton = document.querySelector('#voter-logout-button');
 const refreshVoterDashboardButton = document.querySelector('#refresh-voter-dashboard');
+const voterElectionPickerElement = document.querySelector('#voter-election-picker');
+const voterElectionSelect = document.querySelector('#voter-election-select');
+const downloadActualAttendeesButton = document.querySelector('#download-actual-attendees');
+const downloadProxyEmailsButton = document.querySelector('#download-proxy-emails');
 
 const DEFAULT_API_URL = 'https://bellezea-elections-api.onrender.com';
 const ACTIVE_ELECTION_KEY = 'bellezea-active-election-id';
 const ACTIVE_MODE_KEY = 'bellezea-officer-mode';
 const VOTER_SESSION_KEY = 'bellezea-voter-session';
 const OFFICER_TOKEN_KEY = 'bellezea-officer-token';
+const PUBLIC_ACTIVE_ELECTION_KEY = 'bellezea-public-active-election-id';
 const MAX_CHOICE_IMAGE_BYTES = 1600000;
 const ELECTION_FLOW = [
   { status: 'attendance_open', label: 'Attendance' },
   { status: 'voting_open', label: 'Voting' },
   { status: 'voting_closed', label: 'Closed' },
 ];
-const STAGE_ACTIONS = {
-  draft: { label: 'Start Attendance', nextStatus: 'attendance_open' },
-  attendance_open: { label: 'Open Voting', nextStatus: 'voting_open', requiresQuorum: true },
-  voting_open: { label: 'Close Voting', nextStatus: 'voting_closed' },
-};
 const ATTENDANCE_STATUSES = new Set(['attendance_open', 'voting_open']);
 
 let html5QrCode = null;
@@ -196,7 +198,7 @@ function syncPortalChrome() {
   if (isOfficer) {
     pageTitleElement.textContent = 'Nambiar Bellezea Elections Officer Console';
   } else if (isVoter) {
-    pageTitleElement.textContent = 'Nambiar Bellezea Elections Voter Portal';
+    pageTitleElement.textContent = 'Nambiar Bellezea Attendance View';
   } else if (isHome) {
     pageTitleElement.textContent = 'Nambiar Bellezea Elections';
   }
@@ -253,6 +255,35 @@ function canTakeAttendance() {
   return activeElection && ATTENDANCE_STATUSES.has(activeElection.status);
 }
 
+function votingEnabled(election = activeElection) {
+  return !election || election.voting_enabled !== false;
+}
+
+function electionFlow(election = activeElection) {
+  return votingEnabled(election)
+    ? ELECTION_FLOW
+    : [
+      { status: 'attendance_open', label: 'Attendance' },
+      { status: 'voting_closed', label: 'Closed' },
+    ];
+}
+
+function stageActionFor(election = activeElection) {
+  if (!election) return null;
+  if (election.status === 'draft') {
+    return { label: 'Start Attendance', nextStatus: 'attendance_open' };
+  }
+  if (election.status === 'attendance_open') {
+    return votingEnabled(election)
+      ? { label: 'Open Voting', nextStatus: 'voting_open', requiresQuorum: true }
+      : { label: 'Close Attendance', nextStatus: 'voting_closed' };
+  }
+  if (election.status === 'voting_open') {
+    return { label: 'Close Voting', nextStatus: 'voting_closed' };
+  }
+  return null;
+}
+
 function canEditSetup() {
   return Boolean(activeElection && activeElection.status === 'draft');
 }
@@ -262,7 +293,7 @@ function canEditQuorum() {
 }
 
 function canEditQuestions() {
-  return Boolean(activeElection && ['draft', 'attendance_open'].includes(activeElection.status));
+  return Boolean(activeElection && votingEnabled(activeElection) && ['draft', 'attendance_open'].includes(activeElection.status));
 }
 
 function canEditProxies() {
@@ -416,13 +447,13 @@ async function initializeOfficerPortal() {
   syncPortalChrome();
   switchMode(window.localStorage.getItem(ACTIVE_MODE_KEY) || 'manage');
   renderChoiceInputs(['', '']);
-  await Promise.all([loadResidentDirectory(), loadDefaulters(), loadElections()]);
+  await Promise.all([loadResidentDirectory(), loadElections()]);
 }
 
 function initializeVoterPortal() {
   syncPortalChrome();
   activateView('voter-view');
-  restoreVoterSession();
+  loadVoterDashboard();
 }
 
 async function initializeApp() {
@@ -458,12 +489,10 @@ async function loadElections() {
 async function loadResidentDirectory() {
   try {
     residentDirectory = await apiRequest('/api/resident-directory');
-    renderManualOwners();
     renderProxyHolderOwners();
   } catch (error) {
     residentDirectory = [];
     renderVillaSuggestions(manualVillaInput, manualVillaResults);
-    renderManualOwners();
     renderVillaSuggestions(proxyGrantorVillaInput, proxyGrantorVillaResults);
     renderVillaSuggestions(proxyHolderVillaInput, proxyHolderVillaResults);
     renderVillaSuggestions(defaulterVillaInput, defaulterVillaResults);
@@ -533,7 +562,6 @@ function selectVillaSuggestion(input, resultElement, houseNo) {
   input.value = houseNo;
   resultElement.innerHTML = '';
   if (input === manualVillaInput) {
-    renderManualOwners();
   }
   if (input === proxyHolderVillaInput) {
     renderProxyHolderOwners();
@@ -554,16 +582,6 @@ function renderProxyHolderOwners() {
     ownerSelect: proxyHolderUserSelect,
     disabled: activeElection ? !canEditProxies() : true,
     selectVillaMessage: 'Select a valid proxy holder villa first',
-    noOwnerMessage: 'No owner found for this villa',
-  });
-}
-
-function renderManualOwners() {
-  renderOwnerSelectForVilla({
-    villaInput: manualVillaInput,
-    ownerSelect: manualOwnerSelect,
-    disabled: activeElection ? !canTakeAttendance() : true,
-    selectVillaMessage: 'Select a valid villa first',
     noOwnerMessage: 'No owner found for this villa',
   });
 }
@@ -622,7 +640,9 @@ function renderElectionLibrary() {
   electionLibraryListElement.innerHTML = elections.map((election) => {
     const active = activeElection && activeElection.id === election.id;
     const count = Number(election.question_count || 0);
-    const questionCount = `${count} ${count === 1 ? 'question' : 'questions'}`;
+    const questionCount = votingEnabled(election)
+      ? `${count} ${count === 1 ? 'question' : 'questions'}`
+      : 'Attendance only';
     return `
       <button class="election-list-item ${active ? 'active' : ''}" type="button" data-election-id="${escapeHtml(election.id)}">
         <span>
@@ -643,6 +663,7 @@ async function selectInitialElection() {
     renderEmptyDashboard();
     renderElectionStage();
     renderProxyList();
+    renderDefaulterList();
     return;
   }
 
@@ -663,6 +684,7 @@ async function loadElectionDetail(electionId) {
   renderManageSummary();
   renderQuestions();
   await loadProxies();
+  await loadDefaulters();
   renderElectionStage();
   await loadDashboard();
 }
@@ -670,16 +692,17 @@ async function loadElectionDetail(electionId) {
 function renderElectionStage() {
   const status = activeElection ? activeElection.status : '';
   const normalizedStatus = runStageStatus(status);
-  const stageIndex = ELECTION_FLOW.findIndex((stage) => stage.status === normalizedStatus);
+  const flow = electionFlow(activeElection);
+  const stageIndex = flow.findIndex((stage) => stage.status === normalizedStatus);
   const currentIndex = stageIndex >= 0 ? stageIndex : 0;
   selectedElectionTitleElement.textContent = activeElection ? activeElection.title : 'Select an election';
   activeElectionStatusElement.textContent = activeElection ? runStatusLabel(status) : '-';
-  stageListElement.innerHTML = ELECTION_FLOW.map((stage, index) => {
+  stageListElement.innerHTML = flow.map((stage, index) => {
     const state = index < currentIndex ? 'done' : index === currentIndex ? 'current' : '';
     return `<span class="stage-step ${state}">${escapeHtml(stage.label)}</span>`;
   }).join('');
 
-  const action = STAGE_ACTIONS[status];
+  const action = stageActionFor(activeElection);
   stageActionButton.hidden = !action;
   if (action) {
     const quorumBlocked = action.requiresQuorum && activeElection && !activeElection.quorum_reached;
@@ -688,7 +711,7 @@ function renderElectionStage() {
   }
 
   activeElectionView.classList.toggle('is-draft', status === 'draft');
-  renderManualOwners();
+  activeElectionView.classList.toggle('attendance-only', activeElection ? !votingEnabled(activeElection) : false);
   syncManageLocks();
 }
 
@@ -697,6 +720,7 @@ function setElectionFormMode(mode) {
   if (editingNewElection) {
     electionForm.reset();
     electionQuorumInput.value = '50';
+    votingEnabledInput.checked = false;
     passingRuleSelect.value = 'simple_majority';
     passingThresholdInput.value = '';
     syncPassingRuleControl();
@@ -721,6 +745,7 @@ function populateElectionForm(election) {
   electionTitleInput.value = election.title || '';
   electionDescriptionInput.value = election.description || '';
   electionQuorumInput.value = election.quorum_percent || 50;
+  votingEnabledInput.checked = votingEnabled(election);
   passingRuleSelect.value = election.passing_rule || 'simple_majority';
   passingThresholdInput.value = election.passing_threshold_percent || '';
   syncPassingRuleControl();
@@ -777,7 +802,9 @@ function renderSectionLockInfo({ setupLocked, quorumLocked, questionLocked, prox
   settingsLockInfoElement.textContent = setupLocked
     ? (quorumLocked ? 'Locked after voting starts.' : 'Only quorum can change now.')
     : '';
-  questionLockInfoElement.textContent = questionLocked ? 'Locked after voting starts.' : '';
+  questionLockInfoElement.textContent = !votingEnabled(activeElection)
+    ? 'Voting disabled.'
+    : questionLocked ? 'Locked after voting starts.' : '';
   proxyLockInfoElement.textContent = proxyLocked ? 'Locked after attendance starts.' : '';
   defaulterLockInfoElement.textContent = setupLocked ? 'Locked after attendance starts.' : '';
 }
@@ -804,10 +831,9 @@ function renderManageSummary() {
   manageElectionDescriptionElement.textContent = activeElection.description || 'No description added.';
   manageQuorumSummaryElement.textContent = `${formatPct(activeElection.quorum_percent)}%`;
   manageQuestionCountElement.textContent = formatInt(questions.length);
-  managePassingRuleSummaryElement.textContent = passingRuleLabel(
-    activeElection.passing_rule,
-    activeElection.passing_threshold_percent
-  );
+  managePassingRuleSummaryElement.textContent = votingEnabled(activeElection)
+    ? passingRuleLabel(activeElection.passing_rule, activeElection.passing_threshold_percent)
+    : 'Voting off';
   manageDefaulterSummaryElement.textContent = activeElection.include_defaulters_in_quorum || activeElection.allow_defaulters_to_vote
     ? 'Allowed'
     : 'Excluded';
@@ -839,6 +865,11 @@ function renderQuestions() {
 
   if (!activeElection) {
     questionListElement.innerHTML = '<p class="empty-list">Select or create an election to manage questions.</p>';
+    return;
+  }
+
+  if (!votingEnabled(activeElection)) {
+    questionListElement.innerHTML = '<p class="empty-list">Voting is disabled for this election.</p>';
     return;
   }
 
@@ -880,6 +911,9 @@ function renderEmptyDashboard() {
   representationBarElement.style.width = '0%';
   dashboardAttendees = [];
   attendeeCountElement.textContent = '0';
+  if (votingPaneElement) {
+    votingPaneElement.hidden = false;
+  }
   renderAttendees();
   renderOfficerVotingStatus(null);
 }
@@ -901,6 +935,17 @@ function renderDashboard(data) {
   headerQuorumElement.textContent = `${formatPct(representationPct)}% / ${election ? formatPct(election.quorum_percent) : '-'}%`;
   representationBarElement.style.width = `${Math.max(0, Math.min(100, representationPct))}%`;
   attendeeCountElement.textContent = formatInt(attendees.length);
+  if (votingPaneElement) {
+    votingPaneElement.hidden = !votingEnabled(election);
+  }
+  const showVoting = votingEnabled(election);
+  attendeeFilterSelect.hidden = !showVoting;
+  attendeeSearchInput.closest('.attendee-tools').classList.toggle('no-filter', !showVoting);
+  attendeeFilterSelect.querySelector('option[value="pending"]').hidden = !showVoting;
+  attendeeFilterSelect.querySelector('option[value="voted"]').hidden = !showVoting;
+  if (!showVoting && attendeeFilterSelect.value !== 'all') {
+    attendeeFilterSelect.value = 'all';
+  }
   quorumStatusElement.textContent = election && election.quorum_reached
     ? 'Quorum reached.'
     : 'Quorum not reached yet.';
@@ -982,25 +1027,40 @@ async function loadVotingStatus() {
 function renderAttendees() {
   const query = attendeeSearchInput.value.trim().toLowerCase();
   const filter = attendeeFilterSelect.value;
-  const filtered = dashboardAttendees.filter((attendee) => {
-    const peopleText = (attendee.participants || [])
-      .map((person) => `${person.name || ''} ${person.user_type || ''}`)
-      .join(' ');
-    const matchesQuery = !query
-      || `${peopleText} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.voteSubmittedByName || ''}`.toLowerCase().includes(query);
+  const showVoting = votingEnabled(activeElection);
+  const filtered = filterAttendees(dashboardAttendees, { query, filter, showVoting });
+
+  attendeeListElement.innerHTML = filtered.length
+    ? filtered.map((attendee) => attendeeRowHtml(attendee, { showVoting })).join('')
+    : `<p class="empty-list">${dashboardAttendees.length ? 'No villas match this search.' : 'No attendance marked yet.'}</p>`;
+}
+
+function filterAttendees(attendees, { query = '', filter = 'all', showVoting = false } = {}) {
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  return (attendees || []).filter((attendee) => {
+    const matchesQuery = !normalizedQuery || attendeeSearchText(attendee).includes(normalizedQuery);
     const matchesFilter = filter === 'all'
+      || !showVoting
       || (filter === 'pending' && attendee.counted && !attendee.hasVoted)
       || (filter === 'voted' && attendee.hasVoted);
     return matchesQuery && matchesFilter;
   });
-
-  attendeeListElement.innerHTML = filtered.length
-    ? filtered.map(attendeeRowHtml).join('')
-    : `<p class="empty-list">${dashboardAttendees.length ? 'No villas match this search.' : 'No attendance marked yet.'}</p>`;
 }
 
-function attendeeRowHtml(attendee) {
-  const voteCopy = !attendee.counted
+function attendeeSearchText(attendee) {
+  const peopleText = (attendee.participants || [])
+    .map((person) => `${person.name || ''} ${person.user_type || ''} ${person.house_no || ''}`)
+    .join(' ');
+  return `${peopleText} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.voteSubmittedByName || ''}`
+    .toLowerCase();
+}
+
+function attendeeRowHtml(attendee, options = {}) {
+  const showVoting = options.showVoting !== false;
+  const searchText = attendeeSearchText(attendee);
+  const voteCopy = !showVoting
+    ? (attendee.counted ? 'Counted for quorum' : 'Defaulter: not counted for quorum')
+    : !attendee.counted
     ? 'Defaulter: not counted for quorum or voting'
     : attendee.hasVoted
     ? `Voted by ${attendee.voteSubmittedByName || 'owner'}${attendee.votedAt ? ` | ${formatDateTime(attendee.votedAt)}` : ''}`
@@ -1021,7 +1081,7 @@ function attendeeRowHtml(attendee) {
     </li>
   `).join('');
   return `
-    <div class="attendee-row ${attendee.hasVoted ? 'has-voted' : ''} ${attendee.counted ? '' : 'not-counted'}" role="listitem">
+    <div class="attendee-row ${attendee.hasVoted ? 'has-voted' : ''} ${attendee.counted ? '' : 'not-counted'}" role="listitem" data-attendee-row data-search-text="${escapeHtml(searchText)}">
       <div>
         <div class="attendee-villa-head">
           <strong>${escapeHtml(attendee.flat || '-')}</strong>
@@ -1033,7 +1093,7 @@ function attendeeRowHtml(attendee) {
         <small>${escapeHtml(voteCopy)}</small>
       </div>
       <div>
-        <span class="vote-tag ${!attendee.counted ? 'excluded' : attendee.hasVoted ? 'voted' : 'pending'}">${!attendee.counted ? 'Excluded' : attendee.hasVoted ? 'Voted' : 'Pending'}</span>
+        <span class="vote-tag ${!attendee.counted ? 'excluded' : showVoting && attendee.hasVoted ? 'voted' : 'pending'}">${!attendee.counted ? 'Excluded' : showVoting ? (attendee.hasVoted ? 'Voted' : 'Pending') : 'Counted'}</span>
       </div>
     </div>
   `;
@@ -1048,7 +1108,11 @@ async function loadDashboard() {
   try {
     const dashboard = await apiRequest(`/api/elections/${encodeURIComponent(activeElectionId())}/attendance/dashboard`);
     renderDashboard(dashboard);
-    await loadVotingStatus();
+    if (votingEnabled(dashboard.election)) {
+      await loadVotingStatus();
+    } else {
+      renderOfficerVotingStatus(null);
+    }
   } catch (error) {
     setDashboardLoading(error.message || 'Could not refresh dashboard.');
   }
@@ -1064,6 +1128,7 @@ async function saveElection(event) {
     title,
     description: electionDescriptionInput.value.trim(),
     quorum_percent: Number(electionQuorumInput.value || 50),
+    voting_enabled: votingEnabledInput.checked,
     passing_rule: passingRuleSelect.value,
     passing_threshold_percent: passingRuleSelect.value === 'custom_threshold' && passingThresholdInput.value
       ? Number(passingThresholdInput.value)
@@ -1135,8 +1200,13 @@ async function loadProxies() {
 }
 
 async function loadDefaulters() {
+  if (!activeElection) {
+    defaulters = [];
+    renderDefaulterList();
+    return;
+  }
   try {
-    defaulters = await apiRequest('/api/defaulters');
+    defaulters = await apiRequest(`/api/defaulters?election_id=${encodeURIComponent(activeElection.id)}`);
     renderDefaulterList();
   } catch (error) {
     defaulters = [];
@@ -1151,7 +1221,7 @@ function renderProxyList() {
   }
   const scopedProxies = proxies.filter((proxy) => (
     proxy.status === 'active'
-    && (!proxy.election_id || proxy.election_id === activeElection.id)
+    && proxy.election_id === activeElection.id
   ));
   if (!scopedProxies.length) {
     proxyListElement.innerHTML = '<p class="empty-list">No proxies configured for this election.</p>';
@@ -1161,7 +1231,11 @@ function renderProxyList() {
     <article class="proxy-row">
       <div>
         <strong>${escapeHtml(proxy.grantor_house_no || proxy.grantor_house_id)}</strong>
-        <small>${escapeHtml(proxy.proxy_holder_name || proxy.proxy_holder_user_id)}${proxy.proxy_holder_house_no ? ` | ${escapeHtml(proxy.proxy_holder_house_no)}` : ''}</small>
+        <small>${escapeHtml([
+          proxy.proxy_holder_name || proxy.proxy_holder_user_id,
+          proxy.proxy_holder_house_no,
+          proxy.proxy_holder_email,
+        ].filter(Boolean).join(' | '))}</small>
       </div>
       <button class="secondary small-button" type="button" data-delete-proxy="${escapeHtml(proxy.id)}" ${canEditProxies() ? '' : 'disabled'}>Delete</button>
     </article>
@@ -1169,8 +1243,12 @@ function renderProxyList() {
 }
 
 function renderDefaulterList() {
+  if (!activeElection) {
+    defaulterListElement.innerHTML = '<p class="empty-list">Select an election to manage defaulters.</p>';
+    return;
+  }
   if (!defaulters.length) {
-    defaulterListElement.innerHTML = '<p class="empty-list">No active defaulters.</p>';
+    defaulterListElement.innerHTML = '<p class="empty-list">No defaulters configured for this election.</p>';
     return;
   }
   defaulterListElement.innerHTML = defaulters.map((defaulter) => `
@@ -1206,6 +1284,10 @@ async function addProxy(event) {
     setManageStatus('warning', 'Select an owner name from the proxy holder villa.');
     return;
   }
+  if (!proxyHolderEmailInput.value.trim()) {
+    setManageStatus('warning', 'Enter the proxy holder email address.');
+    return;
+  }
   try {
     await apiRequest('/api/proxies', {
       method: 'POST',
@@ -1214,6 +1296,7 @@ async function addProxy(event) {
         grantor_house_id: grantorVilla.house_id,
         proxy_holder_user_id: proxyHolder.userId,
         proxy_holder_house_id: proxyHolder.houseId,
+        proxy_holder_email: proxyHolderEmailInput.value.trim(),
         notes: '',
       }),
     });
@@ -1243,6 +1326,7 @@ async function addDefaulter(event) {
     await apiRequest('/api/defaulters', {
       method: 'POST',
       body: JSON.stringify({
+        election_id: activeElection.id,
         house_id: villa.house_id,
         reason: defaulterReasonInput.value.trim(),
       }),
@@ -1285,6 +1369,46 @@ async function cancelProxy(proxyId) {
     await loadProxies();
   } catch (error) {
     setManageStatus('error', error.message || 'Could not delete proxy.');
+  }
+}
+
+async function downloadElectionReport(kind) {
+  if (!requireActiveElection()) return;
+  const report = kind === 'proxy'
+    ? {
+      path: `/api/elections/${encodeURIComponent(activeElectionId())}/reports/proxy-holder-emails.csv`,
+      filename: `${slugify(activeElection.title)}-proxy-holder-emails-google-survey.csv`,
+      button: downloadProxyEmailsButton,
+    }
+    : {
+      path: `/api/elections/${encodeURIComponent(activeElectionId())}/reports/actual-attendees.csv`,
+      filename: `${slugify(activeElection.title)}-actual-attendees-mygate.csv`,
+      button: downloadActualAttendeesButton,
+    };
+  report.button.disabled = true;
+  try {
+    const headers = {};
+    if (officerToken) {
+      headers.Authorization = `Bearer ${officerToken}`;
+    }
+    const response = await fetch(`${getApiUrl()}${report.path}`, { headers });
+    if (!response.ok) {
+      const body = await response.json().catch(async () => ({ detail: await response.text() }));
+      throw new Error(body.detail || `Download failed with ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = report.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    setStatus('error', 'Could not download report', error.message || 'Please try again.');
+  } finally {
+    report.button.disabled = false;
   }
 }
 
@@ -1391,6 +1515,10 @@ async function addQuestion(event) {
     setManageStatus('warning', 'Select or create an election before adding questions.');
     return;
   }
+  if (!votingEnabled(activeElection)) {
+    setManageStatus('warning', 'Enable voting in election settings before adding questions.');
+    return;
+  }
   if (!canEditQuestions()) {
     setManageStatus('warning', 'Questions are locked once voting starts.');
     return;
@@ -1463,7 +1591,7 @@ async function deleteQuestion() {
 
 async function advanceElectionStage() {
   if (!activeElection) return;
-  const action = STAGE_ACTIONS[activeElection.status];
+  const action = stageActionFor(activeElection);
   if (!action) return;
   if (action.requiresQuorum && !activeElection.quorum_reached) {
     setStatus('warning', 'Quorum not reached', 'Voting can open after quorum is reached.');
@@ -1597,30 +1725,23 @@ async function submitManualAttendance(event) {
   if (submitting || !requireAttendanceOpen()) return;
 
   const villa = findVillaByInput(manualVillaInput.value);
-  const owner = parseResidentOption(manualOwnerSelect.value);
   if (!villa) {
     setStatus('warning', 'Select a valid villa', 'Choose the villa from Resident Master search results.');
     return;
   }
-  if (!owner.userId || !owner.houseId) {
-    setStatus('warning', 'Select owner name', 'Choose one of the owner names for the selected villa.');
-    return;
-  }
 
   submitting = true;
-  setStatus('', 'Adding attendance', 'Checking the resident record.');
+  setStatus('', 'Adding attendance', 'Marking all owners for this villa.');
   try {
     const response = await apiRequest(`/api/elections/${encodeURIComponent(activeElectionId())}/attendance/manual`, {
       method: 'POST',
       body: JSON.stringify({
-        user_id: owner.userId,
-        house_id: owner.houseId,
+        house_id: villa.house_id,
         source: 'officer',
       }),
     });
     manualAttendanceForm.reset();
     manualVillaResults.innerHTML = '';
-    renderManualOwners();
     setStatus('success', 'Attendance marked', 'Manual attendance has been recorded.', response.resident);
     await loadDashboard();
   } catch (error) {
@@ -1680,54 +1801,120 @@ async function loginVoter(qrRawData) {
 }
 
 async function loadVoterDashboard() {
-  if (!voterSession || !voterSession.user_id) {
-    voterElectionListElement.innerHTML = '<p class="empty-list">Scan or upload your MyGate QR to view elections.</p>';
-    return;
-  }
-  voterElectionListElement.innerHTML = '<p class="empty-list">Loading your elections...</p>';
+  voterElectionListElement.innerHTML = '<p class="empty-list">Loading attendance...</p>';
   try {
-    voterDashboard = await apiRequest(`/api/voters/${encodeURIComponent(voterSession.user_id)}/dashboard`);
-    renderVoterIdentity(voterDashboard.resident);
+    voterDashboard = await apiRequest('/api/public/attendance-board', { skipAuth: true });
     renderVoterElections(voterDashboard.elections || []);
   } catch (error) {
-    voterElectionListElement.innerHTML = `<p class="empty-list">${escapeHtml(error.message || 'Could not load voter dashboard.')}</p>`;
+    voterElectionListElement.innerHTML = `<p class="empty-list">${escapeHtml(error.message || 'Could not load attendance.')}</p>`;
   }
 }
 
 function renderVoterElections(items) {
   if (!items.length) {
-    voterElectionListElement.innerHTML = '<p class="empty-list">No active elections are available yet.</p>';
+    voterElectionPickerElement.hidden = true;
+    voterElectionSelect.innerHTML = '';
+    voterElectionListElement.innerHTML = '<p class="empty-list">No elections are currently in Attendance.</p>';
     return;
   }
-  voterElectionListElement.innerHTML = items.map(voterElectionHtml).join('');
+  voterElectionPickerElement.hidden = false;
+  voterElectionSelect.innerHTML = items.map((item) => {
+    const election = item.election || {};
+    return `<option value="${escapeHtml(election.id)}">${escapeHtml(election.title || 'Untitled election')}</option>`;
+  }).join('');
+
+  const savedId = window.localStorage.getItem(PUBLIC_ACTIVE_ELECTION_KEY);
+  const selected = items.find((item) => item.election && item.election.id === savedId) || items[0];
+  voterElectionSelect.value = selected.election.id;
+  renderSelectedPublicElection(selected.election.id);
 }
 
-function voterElectionHtml(item) {
-  const election = item.election;
-  const questions = item.questions || [];
-  const houses = item.represented_houses || [];
-  const status = election.status;
-  const canVote = status === 'voting_open';
-  const closed = ['voting_closed', 'results_published', 'archived'].includes(status);
-  const votedCount = houses.filter((house) => house.has_voted).length;
+function renderSelectedPublicElection(electionId) {
+  const items = (voterDashboard && voterDashboard.elections) || [];
+  const selected = items.find((item) => item.election && item.election.id === electionId) || items[0];
+  if (!selected) {
+    voterElectionListElement.innerHTML = '<p class="empty-list">No elections are currently in Attendance.</p>';
+    return;
+  }
+  window.localStorage.setItem(PUBLIC_ACTIVE_ELECTION_KEY, selected.election.id);
+  voterElectionSelect.value = selected.election.id;
+  voterElectionListElement.innerHTML = publicAttendanceElectionHtml(selected);
+}
 
+function publicAttendanceElectionHtml(item) {
+  const election = item.election || {};
+  const attendees = item.attendees || [];
+  const hasAttendees = attendees.length > 0;
   return `
-    <article class="voter-election-card">
-      <div class="voter-election-head">
-        <div>
-          <span class="status-pill">${escapeHtml(runStatusLabel(status))}</span>
-          <h2>${escapeHtml(election.title)}</h2>
-          <p class="muted-copy">${escapeHtml(formatInt(election.represented_villas))} villas represented | ${escapeHtml(formatInt(item.voted_villas))} votes cast</p>
+    <article class="voter-election-card public-election-block" data-public-attendance-card>
+      <section class="pane public-quorum-panel">
+        <div class="voter-election-head">
+          <div>
+            <span class="status-pill">${escapeHtml(runStatusLabel(election.status))}</span>
+            <h2>${escapeHtml(election.title)}</h2>
+            <p class="muted-copy">${escapeHtml(formatInt(item.representedVillas))} of ${escapeHtml(formatInt(item.totalVillas))} villas represented | ${escapeHtml(formatPct(item.representationPct))}%</p>
+          </div>
+          <span class="count-pill">${escapeHtml(formatPct(election.quorum_percent))}% quorum</span>
         </div>
-        <span class="count-pill">${escapeHtml(votedCount)}/${escapeHtml(houses.length)}</span>
-      </div>
-      ${election.description ? `<p class="muted-copy">${escapeHtml(election.description)}</p>` : ''}
-      <div class="voter-house-list">
-        ${houses.length ? houses.map((house) => voterHouseHtml(election, questions, house, canVote, closed)).join('') : '<p class="empty-list">Attendance is not marked yet for a villa you can vote for.</p>'}
-      </div>
-      ${closed ? `<div class="results-list">${renderResultsList(item.results || [])}</div>` : ''}
+        ${election.description ? `<p class="muted-copy">${escapeHtml(election.description)}</p>` : ''}
+        <div class="summary-grid">
+          <div class="metric-block">
+            <span>Total Villas</span>
+            <strong>${escapeHtml(formatInt(item.totalVillas))}</strong>
+          </div>
+          <div class="metric-block">
+            <span>Represented</span>
+            <strong>${escapeHtml(formatInt(item.representedVillas))}</strong>
+          </div>
+          <div class="metric-block">
+            <span>Representation</span>
+            <strong>${escapeHtml(formatPct(item.representationPct))}%</strong>
+          </div>
+          <div class="metric-block">
+            <span>Quorum Required</span>
+            <strong>${escapeHtml(formatPct(election.quorum_percent))}%</strong>
+          </div>
+        </div>
+        <div class="progress-track" aria-hidden="true">
+          <div class="progress-bar" style="width: ${Math.max(0, Math.min(100, Number(item.representationPct || 0)))}%"></div>
+        </div>
+        <p class="quorum-status ${election.quorum_reached ? 'success-text' : ''}">
+          ${escapeHtml(election.quorum_reached ? 'Quorum reached.' : 'Quorum not reached yet.')}
+        </p>
+      </section>
+      <section class="pane public-attendees-panel">
+        <div class="pane-head compact-head">
+          <h2>Attending Villas</h2>
+          <span class="count-pill">${escapeHtml(formatInt(attendees.length))}</span>
+        </div>
+        <div class="attendee-tools no-filter">
+          <input type="search" autocomplete="off" placeholder="Search villa or name" aria-label="Search villas or attendees by name" data-public-attendee-search ${hasAttendees ? '' : 'disabled'}>
+        </div>
+        <div class="voter-house-list attendance-board-list attendee-list" data-public-attendee-list>
+          ${hasAttendees ? attendees.map((attendee) => attendeeRowHtml(attendee, { showVoting: false })).join('') : ''}
+          <p class="empty-list" data-public-attendee-empty ${hasAttendees ? 'hidden' : ''}>${hasAttendees ? 'No villas match this search.' : 'No attendance marked yet.'}</p>
+        </div>
+      </section>
     </article>
   `;
+}
+
+function filterPublicAttendanceCard(input) {
+  const card = input.closest('[data-public-attendance-card]');
+  if (!card) return;
+  const query = input.value.trim().toLowerCase();
+  const rows = Array.from(card.querySelectorAll('[data-attendee-row]'));
+  let visibleCount = 0;
+  rows.forEach((row) => {
+    const matches = !query || String(row.dataset.searchText || '').includes(query);
+    row.hidden = !matches;
+    if (matches) visibleCount += 1;
+  });
+  const empty = card.querySelector('[data-public-attendee-empty]');
+  if (empty) {
+    empty.hidden = visibleCount > 0;
+    empty.textContent = rows.length ? 'No villas match this search.' : 'No attendance marked yet.';
+  }
 }
 
 function voterHouseHtml(election, questions, house, canVote, closed) {
@@ -1889,7 +2076,8 @@ function logoutVoter() {
   window.localStorage.removeItem(VOTER_SESSION_KEY);
   voterStatusElement.hidden = true;
   renderVoterIdentity(null);
-  voterElectionListElement.innerHTML = '<p class="empty-list">Scan or upload your MyGate QR to view elections.</p>';
+  voterElectionListElement.innerHTML = '<p class="empty-list">Loading attendance...</p>';
+  loadVoterDashboard();
 }
 
 function renderResultsList(results) {
@@ -1936,10 +2124,13 @@ function formatPct(value) {
 }
 
 function syncPassingRuleControl() {
+  const isVotingEnabled = votingEnabledInput ? votingEnabledInput.checked : true;
   const isCustom = passingRuleSelect.value === 'custom_threshold';
-  passingThresholdInput.hidden = !isCustom;
-  passingThresholdInput.disabled = !isCustom;
-  passingThresholdInput.required = isCustom;
+  passingRuleSelect.closest('label').hidden = !isVotingEnabled;
+  passingRuleSelect.disabled = !isVotingEnabled;
+  passingThresholdInput.hidden = !isVotingEnabled || !isCustom;
+  passingThresholdInput.disabled = !isVotingEnabled || !isCustom;
+  passingThresholdInput.required = isVotingEnabled && isCustom;
   if (!isCustom) {
     passingThresholdInput.value = '';
   }
@@ -1982,6 +2173,14 @@ function labelize(value) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function slugify(value) {
+  return String(value || 'election')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'election';
+}
+
 function runStatusLabel(value) {
   if (value === 'draft') return 'Not Started';
   if (value === 'attendance_open') return 'Attendance';
@@ -2017,6 +2216,8 @@ manualAttendanceForm.addEventListener('submit', submitManualAttendance);
 refreshDashboardButton.addEventListener('click', loadDashboard);
 refreshVotingStatusButton.addEventListener('click', loadVotingStatus);
 restartVotingButton.addEventListener('click', restartVoting);
+downloadActualAttendeesButton.addEventListener('click', () => downloadElectionReport('actual'));
+downloadProxyEmailsButton.addEventListener('click', () => downloadElectionReport('proxy'));
 refreshElectionsButton.addEventListener('click', loadElections);
 refreshElectionLibraryButton.addEventListener('click', loadElections);
 syncResidentsButton.addEventListener('click', syncResidentsFromMaster);
@@ -2024,6 +2225,7 @@ attendeeSearchInput.addEventListener('input', renderAttendees);
 attendeeFilterSelect.addEventListener('change', renderAttendees);
 electionForm.addEventListener('submit', saveElection);
 passingRuleSelect.addEventListener('change', syncPassingRuleControl);
+votingEnabledInput.addEventListener('change', syncPassingRuleControl);
 questionForm.addEventListener('submit', addQuestion);
 electionSelect.addEventListener('change', () => loadElectionDetail(electionSelect.value));
 stageActionButton.addEventListener('click', advanceElectionStage);
@@ -2045,7 +2247,6 @@ deleteQuestionButton.addEventListener('click', deleteQuestion);
 addChoiceButton.addEventListener('click', addChoiceInput);
 manualVillaInput.addEventListener('input', () => {
   renderVillaSuggestions(manualVillaInput, manualVillaResults);
-  renderManualOwners();
 });
 manualVillaResults.addEventListener('click', (event) => {
   const button = event.target.closest('[data-house-no]');
@@ -2129,11 +2330,18 @@ voterScanButton.addEventListener('click', toggleVoterScanner);
 voterFileInput.addEventListener('change', (event) => scanVoterFile(event.target.files[0]));
 voterLogoutButton.addEventListener('click', logoutVoter);
 refreshVoterDashboardButton.addEventListener('click', loadVoterDashboard);
+voterElectionSelect.addEventListener('change', () => renderSelectedPublicElection(voterElectionSelect.value));
 voterElectionListElement.addEventListener('submit', (event) => {
   const form = event.target.closest('[data-voter-ballot]');
   if (form) {
     event.preventDefault();
     submitVoterBallot(form);
+  }
+});
+voterElectionListElement.addEventListener('input', (event) => {
+  const input = event.target.closest('[data-public-attendee-search]');
+  if (input) {
+    filterPublicAttendanceCard(input);
   }
 });
 initializeApp();

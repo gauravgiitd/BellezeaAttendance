@@ -6,6 +6,7 @@ For the broader election-management product plan, see:
 
 - [Election Platform README](docs/ELECTION_PLATFORM_README.md)
 - [Implementation Plan](docs/IMPLEMENTATION_PLAN.md)
+- [Regression Test Plan](docs/TEST_PLAN.md)
 
 The public site is intended to live at `https://bellezea-elections.onrender.com/`.
 
@@ -111,6 +112,18 @@ Then open:
 ```text
 http://localhost:8080
 ```
+
+## Regression Tests
+
+Run the backend regression harness before pushing changes:
+
+```bash
+.venv/bin/python scripts/regression_tests.py
+```
+
+The harness uses `DATABASE_URL` when it is set. If it is not set, it defaults to a local `bellezea_elections` Postgres database for the current macOS user. It creates synthetic villas, residents, and elections prefixed with `Regression Harness:` and cleans them up at the end.
+
+On Render, the paid API service runs the same harness as a `preDeployCommand` after installing dependencies and before starting the new API version. If the harness fails, Render fails the deployment. This keeps local runs manual while gating every Render deploy.
 
 ## Notes
 

@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nambiar Bellezea Elections</title>
-    <link rel="stylesheet" href="styles.css?v=20260524-16">
+    <link rel="stylesheet" href="styles.css?v=20260528-6">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260524-16" defer></script>
-    <script src="app.js?v=20260524-16" defer></script>
+    <script src="config.js?v=20260528-6" defer></script>
+    <script src="app.js?v=20260528-6" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -30,7 +30,7 @@
           <div>
             <span class="status-pill">Bellezea Elections</span>
             <h2>Choose how you want to enter</h2>
-            <p>Election officers manage attendance, voting, proxies, and results. Voters scan their MyGate QR and submit votes when voting opens.</p>
+            <p>Election officers manage attendance, proxies, defaulters, and optional voting. Residents can view live attendance for meetings currently in progress.</p>
           </div>
           <div class="portal-card-grid">
             <a class="portal-card" href="/officer">
@@ -38,8 +38,8 @@
               <span>Requires bellezea.elections@gmail.com</span>
             </a>
             <a class="portal-card" href="/voter">
-              <strong>Voter Portal</strong>
-              <span>Scan or upload your MyGate QR</span>
+              <strong>Attendance View</strong>
+              <span>View live represented villas</span>
             </a>
           </div>
         </section>
@@ -168,6 +168,10 @@
                       <option value="">Select proxy holder villa first</option>
                     </select>
                   </label>
+                  <label>
+                    <span>Proxy Holder Email</span>
+                    <input id="proxy-holder-email" type="email" autocomplete="email" required>
+                  </label>
                   <button class="secondary" type="submit">Add Proxy</button>
                 </form>
 
@@ -228,6 +232,10 @@
               <span>Quorum %</span>
               <input id="election-quorum" type="number" min="0" max="100" step="0.1" value="50">
             </label>
+            <label class="check-row">
+              <input id="voting-enabled" type="checkbox" checked>
+              <span>Enable voting for this election</span>
+            </label>
             <label>
               <span>Passing rule</span>
               <div class="passing-rule-control">
@@ -262,6 +270,10 @@
               <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
+          <div class="summary-actions report-actions">
+            <button id="download-actual-attendees" class="secondary small-button" type="button">Actual Attendee Report for MyGate</button>
+            <button id="download-proxy-emails" class="secondary small-button" type="button">Proxy Attendee Report for Google Survey</button>
+          </div>
           <p id="dashboard-updated" class="updated-copy">Loading elections...</p>
         </section>
 
@@ -318,12 +330,6 @@
                   <input id="manual-villa" type="text" autocomplete="off" required>
                   <div id="manual-villa-results" class="villa-search-results" role="listbox"></div>
                 </label>
-                <label>
-                  <span>Owner Name</span>
-                  <select id="manual-owner-user-id" required>
-                    <option value="">Select villa first</option>
-                  </select>
-                </label>
                 <button class="secondary" type="submit">Add Manually</button>
               </form>
 
@@ -363,7 +369,6 @@
                 <div id="representation-bar" class="progress-bar"></div>
               </div>
               <p id="quorum-status" class="quorum-status">Select an election to view quorum.</p>
-
             </section>
 
             <section class="pane voting-pane" aria-label="Voting status">
@@ -417,53 +422,41 @@
                 <p class="empty-list">No attendance marked yet.</p>
               </div>
             </section>
+
           </section>
         </section>
       </section>
 
-      <section id="voter-view" class="app-view" aria-label="Voter portal">
+      <section id="voter-view" class="app-view" aria-label="Public attendance view">
         <section class="voter-layout">
-          <section class="pane voter-login-pane">
+          <section class="pane voter-login-pane public-board-intro">
             <div class="pane-head">
-              <h2>Voter Login</h2>
-              <button id="voter-logout-button" class="secondary small-button" type="button" hidden>Logout</button>
+              <h2>Live Attendance</h2>
             </div>
-            <ol class="scan-steps" aria-label="MyGate QR voter steps">
-              <li>Open your MyGate app</li>
-              <li>Press your profile icon on top right</li>
-              <li>Press your QR code next to MyGate ID and scan here</li>
-            </ol>
-            <div class="actions">
-              <button id="voter-scan-button" class="primary" type="button">
-                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 12h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-                </svg>
-                <span>Scan QR</span>
-              </button>
-              <label class="file-button" for="voter-qr-file">
-                <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 16V4m0 0 4 4m-4-4-4 4M5 20h14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                <span>Upload QR</span>
-              </label>
-              <input id="voter-qr-file" type="file" accept="image/*">
-            </div>
-            <div id="voter-qr-reader" aria-live="polite"></div>
+            <p class="muted-copy">This page shows represented villas for elections currently in Attendance. Only election officers can add or modify attendance.</p>
+            <button id="voter-logout-button" class="secondary small-button" type="button" hidden>Logout</button>
+            <button id="voter-scan-button" class="primary" type="button" hidden><span>Scan QR</span></button>
+            <input id="voter-qr-file" type="file" accept="image/*" hidden>
+            <div id="voter-qr-reader" aria-live="polite" hidden></div>
             <div id="voter-status" class="status" role="status" aria-live="polite" hidden></div>
             <div id="voter-identity" class="resident" hidden></div>
           </section>
 
           <section class="pane voter-elections-pane">
             <div class="pane-head">
-              <h2>My Elections</h2>
+              <h2>Attendance In Progress</h2>
               <button id="refresh-voter-dashboard" class="icon-button" type="button" aria-label="Refresh voter dashboard">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
               </button>
             </div>
+            <label id="voter-election-picker" class="active-election-control public-election-picker" hidden>
+              <span>Election</span>
+              <select id="voter-election-select"></select>
+            </label>
             <div id="voter-election-list" class="voter-election-list">
-              <p class="empty-list">Scan or upload your MyGate QR to view elections.</p>
+              <p class="empty-list">Loading attendance...</p>
             </div>
           </section>
         </section>
