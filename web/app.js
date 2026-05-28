@@ -1069,18 +1069,14 @@ function attendeeRowHtml(attendee, options = {}) {
   const showVoting = options.showVoting !== false;
   const canRemove = Boolean(options.allowRemove && !attendee.isProxy);
   const searchText = attendeeSearchText(attendee);
-  const voteCopy = !showVoting
-    ? (attendee.counted ? 'Counted for quorum' : 'Defaulter: not counted for quorum')
-    : !attendee.counted
-    ? 'Defaulter: not counted for quorum or voting'
-    : attendee.hasVoted
-    ? `Voted by ${attendee.voteSubmittedByName || 'owner'}${attendee.votedAt ? ` | ${formatDateTime(attendee.votedAt)}` : ''}`
-    : 'Not voted';
   const rowLabels = [
     attendee.isProxy ? 'Proxy' : 'Actual',
     attendee.isDefaulter ? 'Defaulter' : '',
     attendee.counted ? '' : 'Not counted',
   ].filter(Boolean);
+  const statusTag = attendee.counted && showVoting
+    ? `<span class="vote-tag ${attendee.hasVoted ? 'voted' : 'pending'}">${attendee.hasVoted ? 'Voted' : 'Pending'}</span>`
+    : '';
   const participantRows = (attendee.participants || []).map((person) => `
     <li>
       <strong>${escapeHtml(person.name || '-')}</strong>
@@ -1101,10 +1097,9 @@ function attendeeRowHtml(attendee, options = {}) {
         <ul class="attendee-people">
           ${participantRows || '<li><span>No attendee details</span></li>'}
         </ul>
-        <small>${escapeHtml(voteCopy)}</small>
       </div>
       <div>
-        <span class="vote-tag ${!attendee.counted ? 'excluded' : showVoting && attendee.hasVoted ? 'voted' : 'pending'}">${!attendee.counted ? 'Excluded' : showVoting ? (attendee.hasVoted ? 'Voted' : 'Pending') : 'Counted'}</span>
+        ${statusTag}
         ${canRemove ? `
           <button
             class="icon-text-button danger-button remove-attendance-button"
