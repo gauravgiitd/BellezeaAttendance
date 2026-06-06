@@ -39,6 +39,8 @@ const electionTitleInput = document.querySelector('#election-title');
 const electionDescriptionInput = document.querySelector('#election-description');
 const electionQuorumInput = document.querySelector('#election-quorum');
 const votingEnabledInput = document.querySelector('#voting-enabled');
+const attendanceModesInput = document.querySelector('#attendance-modes');
+const attendanceModeOptionsElement = document.querySelector('#attendance-mode-options');
 const includeDefaultersQuorumInput = document.querySelector('#include-defaulters-quorum');
 const questionPaneElement = document.querySelector('#question-pane');
 const questionForm = document.querySelector('#question-form');
@@ -127,6 +129,7 @@ const ELECTION_FLOW = [
   { status: 'voting_closed', label: 'Closed' },
 ];
 const ATTENDANCE_STATUSES = new Set(['attendance_open', 'voting_open']);
+const DEFAULT_ATTENDANCE_MODES = ['Physical', 'Virtual'];
 
 let html5QrCode = null;
 let scanning = false;
@@ -262,6 +265,32 @@ function votingEnabled(election = activeElection) {
   return !election || election.voting_enabled !== false;
 }
 
+function normalizeAttendanceModes(value) {
+  const rawModes = Array.isArray(value)
+    ? value
+    : String(value || '').split(',');
+  const modes = [];
+  const seen = new Set();
+  rawModes.forEach((item) => {
+    const mode = String(item || '').trim();
+    const key = mode.toLowerCase();
+    if (mode && !seen.has(key)) {
+      modes.push(mode);
+      seen.add(key);
+    }
+  });
+  return modes.length ? modes : [...DEFAULT_ATTENDANCE_MODES];
+}
+
+function electionAttendanceModes(election = activeElection) {
+  return normalizeAttendanceModes(election && election.attendance_modes);
+}
+
+function selectedAttendanceMode() {
+  const checked = attendanceModeOptionsElement && attendanceModeOptionsElement.querySelector('input[name="attendance-mode"]:checked');
+  return checked ? checked.value : electionAttendanceModes()[0];
+}
+
 function electionFlow(election = activeElection) {
   return votingEnabled(election)
     ? ELECTION_FLOW
@@ -284,6 +313,9 @@ function stageActionFor(election = activeElection) {
   if (election.status === 'voting_open') {
     return { label: 'Close Voting', nextStatus: 'voting_closed' };
   }
+  if (election.status === 'voting_closed' && !votingEnabled(election)) {
+    return { label: 'Reopen Attendance', nextStatus: 'attendance_open' };
+  }
   return null;
 }
 
@@ -300,7 +332,7 @@ function canEditQuestions() {
 }
 
 function canEditProxies() {
-  return canEditSetup();
+  return Boolean(activeElection && ['draft', 'attendance_open'].includes(activeElection.status));
 }
 
 function requireAttendanceOpen() {
@@ -715,7 +747,21 @@ function renderElectionStage() {
 
   activeElectionView.classList.toggle('is-draft', status === 'draft');
   activeElectionView.classList.toggle('attendance-only', activeElection ? !votingEnabled(activeElection) : false);
+  renderAttendanceModeOptions();
   syncManageLocks();
+}
+
+function renderAttendanceModeOptions() {
+  if (!attendanceModeOptionsElement) return;
+  const modes = electionAttendanceModes();
+  const previous = selectedAttendanceMode();
+  const selected = modes.find((mode) => mode.toLowerCase() === previous.toLowerCase()) || modes[0];
+  attendanceModeOptionsElement.innerHTML = modes.map((mode) => `
+    <label>
+      <input type="radio" name="attendance-mode" value="${escapeHtml(mode)}" ${mode === selected ? 'checked' : ''}>
+      <span>${escapeHtml(mode)}</span>
+    </label>
+  `).join('');
 }
 
 function setElectionFormMode(mode) {
@@ -724,6 +770,7 @@ function setElectionFormMode(mode) {
     electionForm.reset();
     electionQuorumInput.value = '50';
     votingEnabledInput.checked = false;
+    attendanceModesInput.value = DEFAULT_ATTENDANCE_MODES.join(', ');
     passingRuleSelect.value = 'simple_majority';
     passingThresholdInput.value = '';
     syncPassingRuleControl();
@@ -749,6 +796,7 @@ function populateElectionForm(election) {
   electionDescriptionInput.value = election.description || '';
   electionQuorumInput.value = election.quorum_percent || 50;
   votingEnabledInput.checked = votingEnabled(election);
+  attendanceModesInput.value = electionAttendanceModes(election).join(', ');
   passingRuleSelect.value = election.passing_rule || 'simple_majority';
   passingThresholdInput.value = election.passing_threshold_percent || '';
   syncPassingRuleControl();
@@ -788,8 +836,8 @@ function syncManageLocks() {
   renderManageSummary();
   renderDefaulterList();
   renderSectionLockInfo({ setupLocked, quorumLocked, questionLocked, proxyLocked });
-  if (proxyLocked && activeElection && activeElection.status !== 'draft') {
-    proxyForm.title = 'Proxy changes are locked after attendance starts.';
+  if (proxyLocked && activeElection && !['draft', 'attendance_open'].includes(activeElection.status)) {
+    proxyForm.title = 'Proxy changes are locked after voting starts.';
   } else {
     proxyForm.title = '';
   }
@@ -811,7 +859,7 @@ function renderSectionLockInfo({ setupLocked, quorumLocked, questionLocked, prox
   questionLockInfoElement.textContent = !votingEnabled(activeElection)
     ? 'Voting disabled.'
     : questionLocked ? 'Locked after voting starts.' : '';
-  proxyLockInfoElement.textContent = proxyLocked ? 'Locked after attendance starts.' : '';
+  proxyLockInfoElement.textContent = proxyLocked ? 'Locked after voting starts.' : '';
   defaulterLockInfoElement.textContent = setupLocked ? 'Locked after attendance starts.' : '';
 }
 
@@ -1059,9 +1107,9 @@ function filterAttendees(attendees, { query = '', filter = 'all', showVoting = f
 
 function attendeeSearchText(attendee) {
   const peopleText = (attendee.participants || [])
-    .map((person) => `${person.name || ''} ${person.user_type || ''} ${person.house_no || ''}`)
+    .map((person) => `${person.name || ''} ${person.user_type || ''} ${person.house_no || ''} ${person.attendance_mode || ''}`)
     .join(' ');
-  return `${peopleText} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.voteSubmittedByName || ''}`
+  return `${peopleText} ${attendee.flat || ''} ${attendee.house_id || ''} ${attendee.attendanceMode || ''} ${attendee.voteSubmittedByName || ''}`
     .toLowerCase();
 }
 
@@ -1069,8 +1117,9 @@ function attendeeRowHtml(attendee, options = {}) {
   const showVoting = options.showVoting !== false;
   const canRemove = Boolean(options.allowRemove && !attendee.isProxy);
   const searchText = attendeeSearchText(attendee);
+  const attendanceModeLabel = attendee.attendanceMode || (attendee.participants || []).find((person) => person.attendance_mode)?.attendance_mode || 'Actual';
   const rowLabels = [
-    attendee.isProxy ? 'Proxy' : 'Actual',
+    attendee.isProxy ? 'Proxy' : attendanceModeLabel,
     attendee.isDefaulter ? 'Defaulter' : '',
     attendee.counted ? '' : 'Not counted',
   ].filter(Boolean);
@@ -1171,6 +1220,7 @@ async function saveElection(event) {
     description: electionDescriptionInput.value.trim(),
     quorum_percent: Number(electionQuorumInput.value || 50),
     voting_enabled: votingEnabledInput.checked,
+    attendance_modes: normalizeAttendanceModes(attendanceModesInput.value),
     passing_rule: passingRuleSelect.value,
     passing_threshold_percent: passingRuleSelect.value === 'custom_threshold' && passingThresholdInput.value
       ? Number(passingThresholdInput.value)
@@ -1308,7 +1358,7 @@ async function addProxy(event) {
   event.preventDefault();
   if (!requireActiveElection()) return;
   if (!canEditProxies()) {
-    setManageStatus('warning', 'Proxy changes are locked after attendance starts.');
+    setManageStatus('warning', 'Proxy changes are locked after voting starts.');
     return;
   }
   const grantorVilla = findVillaByInput(proxyGrantorVillaInput.value);
@@ -1348,6 +1398,7 @@ async function addProxy(event) {
     renderProxyHolderOwners();
     setManageStatus('success', 'Proxy added.');
     await loadProxies();
+    await loadDashboard();
   } catch (error) {
     setManageStatus('error', error.message || 'Could not add proxy.');
   }
@@ -1400,7 +1451,7 @@ async function clearDefaulter(defaulterId) {
 
 async function cancelProxy(proxyId) {
   if (!canEditProxies()) {
-    setManageStatus('warning', 'Proxy changes are locked after attendance starts.');
+    setManageStatus('warning', 'Proxy changes are locked after voting starts.');
     return;
   }
   try {
@@ -1409,6 +1460,7 @@ async function cancelProxy(proxyId) {
       });
     setManageStatus('success', 'Proxy deleted.');
     await loadProxies();
+    await loadDashboard();
   } catch (error) {
     setManageStatus('error', error.message || 'Could not delete proxy.');
   }
@@ -1751,6 +1803,7 @@ async function submitQr(qrRawData, method) {
         qr_raw_data: qrRawData,
         method,
         source: 'officer',
+        attendance_mode: selectedAttendanceMode(),
       }),
     });
     setStatus('success', 'Attendance marked', 'Villa representation has been updated.', response.resident);
@@ -1780,6 +1833,7 @@ async function submitManualAttendance(event) {
       body: JSON.stringify({
         house_id: villa.house_id,
         source: 'officer',
+        attendance_mode: selectedAttendanceMode(),
       }),
     });
     manualAttendanceForm.reset();
@@ -1885,7 +1939,7 @@ function renderSelectedPublicElection(electionId) {
 
 function publicAttendanceElectionHtml(item) {
   const election = item.election || {};
-  const attendees = item.attendees || [];
+  const attendees = (item.attendees || []).filter((attendee) => !attendee.isDefaulter);
   const hasAttendees = attendees.length > 0;
   return `
     <article class="voter-election-card public-election-block" data-public-attendance-card>

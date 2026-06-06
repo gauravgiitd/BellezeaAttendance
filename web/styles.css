@@ -548,6 +548,52 @@ h2 {
   gap: 8px;
 }
 
+.attendance-mode-control {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.attendance-mode-control > span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.segmented-control {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.segmented-control label {
+  display: inline-flex;
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.segmented-control input:checked + span {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent-strong);
+}
+
 .report-actions {
   flex-wrap: wrap;
 }
@@ -1422,6 +1468,49 @@ select:focus {
   display: grid;
   gap: 8px;
   background: #fff;
+}
+
+.attendance-mode-control .segmented-control {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.attendance-mode-control .segmented-control label {
+  display: inline-flex;
+  width: auto;
+  gap: 0;
+}
+
+.attendance-mode-control .segmented-control input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  min-height: 1px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.attendance-mode-control .segmented-control input[type="radio"] + span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attendance-mode-control .segmented-control input[type="radio"]:checked + span {
+  border-color: rgba(15, 118, 110, 0.35);
+  background: rgba(15, 118, 110, 0.1);
+  color: var(--accent-strong);
 }
 
 .voter-ballot-question {

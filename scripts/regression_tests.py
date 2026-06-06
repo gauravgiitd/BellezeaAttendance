@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 
 DEFAULT_DATABASE_URL = f"postgresql://{getpass.getuser()}@127.0.0.1:5432/bellezea_elections"
 TEST_PREFIX = "Regression Harness"
+PROXY_REPORT_HEADER = "Grantor Villa,Proxy Holder Villa,Proxy Holder Name,Attendance Mode,Proxy Holder Email"
 
 VILLA_A = "990001"
 VILLA_B = "990002"
@@ -118,6 +119,7 @@ class RegressionHarness:
             self.test_attendance_stage_rules_and_qr_validation,
             self.test_defaulter_exclusion_and_inclusion,
             self.test_proxy_management_and_reports,
+            self.test_proxy_changes_during_attendance_reconcile_attendees,
             self.test_proxy_holder_can_be_any_owner_in_attending_villa,
             self.test_remove_actual_attendance_removes_owner_and_proxy_villas,
             self.test_defaulter_proxy_report_exclusion,
@@ -208,6 +210,7 @@ class RegressionHarness:
         allow_defaulters_to_vote: bool = False,
         passing_rule: str = "simple_majority",
         passing_threshold_percent: str | None = None,
+        attendance_modes: list[str] | None = None,
     ) -> dict[str, Any]:
         election = self.api.create_election(
             self.api.ElectionCreate(
@@ -215,6 +218,7 @@ class RegressionHarness:
                 description="Created by scripts/regression_tests.py",
                 quorum_percent=Decimal(quorum_percent),
                 voting_enabled=voting_enabled,
+                attendance_modes=attendance_modes or ["Physical", "Virtual"],
                 passing_rule=passing_rule,
                 passing_threshold_percent=(
                     Decimal(passing_threshold_percent) if passing_threshold_percent is not None else None
@@ -243,16 +247,21 @@ class RegressionHarness:
     def set_status(self, election_id: str, status: str) -> dict[str, Any]:
         return self.api.update_election_status(election_id, self.api.ElectionStatusUpdate(status=status))
 
-    def mark_manual(self, election_id: str, house_id: str) -> dict[str, Any]:
+    def mark_manual(self, election_id: str, house_id: str, attendance_mode: str = "Physical") -> dict[str, Any]:
         return self.api.mark_manual_attendance(
             election_id,
-            self.api.AttendanceManualRequest(house_id=house_id, source="regression"),
+            self.api.AttendanceManualRequest(house_id=house_id, source="regression", attendance_mode=attendance_mode),
         )
 
-    def mark_qr(self, election_id: str, qr_raw_data: str) -> dict[str, Any]:
+    def mark_qr(self, election_id: str, qr_raw_data: str, attendance_mode: str = "Physical") -> dict[str, Any]:
         return self.api.mark_qr_attendance(
             election_id,
-            self.api.AttendanceQrRequest(qr_raw_data=qr_raw_data, method="qr_scan", source="regression"),
+            self.api.AttendanceQrRequest(
+                qr_raw_data=qr_raw_data,
+                method="qr_scan",
+                source="regression",
+                attendance_mode=attendance_mode,
+            ),
         )
 
     def remove_attendance(self, election_id: str, house_id: str) -> dict[str, Any]:
@@ -275,6 +284,9 @@ class RegressionHarness:
                 proxy_holder_email=email,
             )
         )
+
+    def cancel_proxy(self, proxy_id: str) -> dict[str, Any]:
+        return self.api.cancel_proxy(proxy_id)
 
     def add_defaulter(self, election_id: str, house_id: str) -> dict[str, Any]:
         return self.api.create_defaulter(
@@ -385,7 +397,8 @@ class RegressionHarness:
             ),
             "locked",
         )
-        self.expect_http_error(409, lambda: self.create_proxy(election_id, VILLA_A), "locked")
+        proxy_during_attendance = self.create_proxy(election_id, VILLA_A)
+        assert proxy_during_attendance["grantor_house_id"] == VILLA_A
         self.expect_http_error(409, lambda: self.add_defaulter(election_id, VILLA_C), "locked")
         self.expect_http_error(409, lambda: self.set_status(election_id, "voting_open"), "Quorum")
 
@@ -417,26 +430,30 @@ class RegressionHarness:
             ),
             "locked",
         )
+        self.expect_http_error(409, lambda: self.create_proxy(election_id, VILLA_C), "locked")
 
     def test_attendance_marks_all_owners_and_is_idempotent(self) -> None:
-        election = self.create_election("actual attendance")
+        election = self.create_election("actual attendance", attendance_modes=["Physical", "Virtual", "Clubhouse"])
+        assert election["attendance_modes"] == ["Physical", "Virtual", "Clubhouse"]
         election_id = election["id"]
         self.set_status(election_id, "attendance_open")
 
-        self.mark_manual(election_id, VILLA_A)
-        self.mark_manual(election_id, VILLA_A)
+        self.mark_manual(election_id, VILLA_A, attendance_mode="Virtual")
+        self.mark_manual(election_id, VILLA_A, attendance_mode="Virtual")
 
         row = self.dashboard_row(election_id, VILLA_A)
         assert row["counted"] is True
+        assert row["attendanceMode"] == "Virtual"
         assert len(row["participants"]) == 2
+        assert {person["attendance_mode"] for person in row["participants"]} == {"Virtual"}
 
         dashboard = self.api.attendance_dashboard(election_id)
         assert dashboard["representedVillas"] == 1
 
         rows = self.csv_rows(self.api.actual_attendee_report(election_id))
-        assert {(row["Name"], row["House Id (Do Not Edit)"]) for row in rows} == {
-            ("Harness Owner A1", VILLA_A),
-            ("Harness Owner A2", VILLA_A),
+        assert {(row["Name"], row["Attendance Mode"], row["House Id (Do Not Edit)"]) for row in rows} == {
+            ("Harness Owner A1", "Virtual", VILLA_A),
+            ("Harness Owner A2", "Virtual", VILLA_A),
         }
 
     def test_attendance_stage_rules_and_qr_validation(self) -> None:
@@ -448,7 +465,13 @@ class RegressionHarness:
 
         self.mark_qr(election_id, f"{PASSCODE_A1} online qr payload")
         self.expect_http_error(400, lambda: self.mark_qr(election_id, "no-passcode-here"), "extract passcode")
+        self.expect_http_error(400, lambda: self.mark_manual(election_id, VILLA_B, attendance_mode="Phone"), "Attendance mode")
         self.expect_http_error(403, lambda: self.mark_qr(election_id, f"{PASSCODE_TENANT_ONLY} payload"), "Only owner-type")
+        self.set_status(election_id, "voting_closed")
+        self.expect_http_error(409, lambda: self.mark_manual(election_id, VILLA_B), "Attendance can be marked")
+        reopened = self.set_status(election_id, "attendance_open")
+        assert reopened["status"] == "attendance_open"
+        self.mark_manual(election_id, VILLA_B)
 
         voting_election = self.create_election("attendance during voting", voting_enabled=True, quorum_percent="0.1")
         voting_election_id = voting_election["id"]
@@ -520,7 +543,31 @@ class RegressionHarness:
         actual_rows = self.csv_rows(self.api.actual_attendee_report(election_id))
         assert [row["Name"] for row in actual_rows] == ["Harness Proxy Holder"]
         proxy_rows = self.csv_rows(self.api.proxy_holder_email_report(election_id))
-        assert proxy_rows == [{"Email": "proxy.holder@example.com"}]
+        assert proxy_rows == [
+            {
+                "Grantor Villa": "Harness Villa A",
+                "Proxy Holder Villa": "Harness Villa B",
+                "Proxy Holder Name": "Harness Proxy Holder",
+                "Attendance Mode": "Physical",
+                "Proxy Holder Email": "proxy.holder@example.com",
+            }
+        ]
+
+    def test_proxy_changes_during_attendance_reconcile_attendees(self) -> None:
+        election = self.create_election("proxy changes during attendance")
+        election_id = election["id"]
+        self.set_status(election_id, "attendance_open")
+        self.mark_manual(election_id, VILLA_B)
+
+        proxy = self.create_proxy(election_id, VILLA_A)
+        proxy_row = self.dashboard_row(election_id, VILLA_A, "proxy")
+        assert proxy_row["counted"] is True
+        assert proxy_row["participants"][0]["user_id"] == OWNER_B1
+
+        cancelled = self.cancel_proxy(proxy["id"])
+        assert cancelled["status"] == "cancelled"
+        dashboard = self.api.attendance_dashboard(election_id)
+        assert not any(row["house_id"] == VILLA_A and row["representationType"] == "proxy" for row in dashboard["attendees"])
 
     def test_proxy_holder_can_be_any_owner_in_attending_villa(self) -> None:
         election = self.create_election("proxy holder second owner")
@@ -540,7 +587,13 @@ class RegressionHarness:
         assert proxy_row["counted"] is True
         assert proxy_row["participants"][0]["user_id"] == OWNER_A2
         assert self.csv_rows(self.api.proxy_holder_email_report(election_id)) == [
-            {"Email": "second.owner.proxy@example.com"}
+            {
+                "Grantor Villa": "Harness Villa C",
+                "Proxy Holder Villa": "Harness Villa A",
+                "Proxy Holder Name": "Harness Owner A2",
+                "Attendance Mode": "Physical",
+                "Proxy Holder Email": "second.owner.proxy@example.com",
+            }
         ]
 
     def test_remove_actual_attendance_removes_owner_and_proxy_villas(self) -> None:
@@ -562,7 +615,7 @@ class RegressionHarness:
         assert dashboard["representedVillas"] == 0
         assert not any(row["house_id"] in {VILLA_A, VILLA_C} for row in dashboard["attendees"])
         assert self.csv_rows(self.api.actual_attendee_report(election_id)) == []
-        assert self.csv_lines(self.api.proxy_holder_email_report(election_id)) == ["Email"]
+        assert self.csv_lines(self.api.proxy_holder_email_report(election_id)) == [PROXY_REPORT_HEADER]
 
     def test_defaulter_proxy_report_exclusion(self) -> None:
         election = self.create_election("defaulter proxy excluded")
@@ -576,7 +629,7 @@ class RegressionHarness:
         proxy_row = self.dashboard_row(election_id, VILLA_C, "proxy")
         assert proxy_row["isDefaulter"] is True
         assert proxy_row["counted"] is False
-        assert self.csv_lines(self.api.proxy_holder_email_report(election_id)) == ["Email"]
+        assert self.csv_lines(self.api.proxy_holder_email_report(election_id)) == [PROXY_REPORT_HEADER]
 
     def test_voting_ballots_results_and_restart(self) -> None:
         election = self.create_election("voting", voting_enabled=True, quorum_percent="0.1")

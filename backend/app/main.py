@@ -18,6 +18,7 @@ from .db import connection, initialize_schema
 
 
 app = FastAPI(title="Nambiar Bellezea Election API")
+DEFAULT_ATTENDANCE_MODES = ["Physical", "Virtual"]
 
 
 def cors_origins() -> list[str]:
@@ -76,6 +77,7 @@ class ElectionCreate(BaseModel):
     description: str = ""
     quorum_percent: Decimal = Decimal("50.0")
     voting_enabled: bool = True
+    attendance_modes: list[str] = Field(default_factory=lambda: DEFAULT_ATTENDANCE_MODES.copy())
     passing_rule: str = "simple_majority"
     passing_threshold_percent: Decimal | None = None
     include_defaulters_in_quorum: bool = False
@@ -87,6 +89,7 @@ class ElectionUpdate(BaseModel):
     description: str = ""
     quorum_percent: Decimal = Decimal("50.0")
     voting_enabled: bool = True
+    attendance_modes: list[str] = Field(default_factory=lambda: DEFAULT_ATTENDANCE_MODES.copy())
     passing_rule: str = "simple_majority"
     passing_threshold_percent: Decimal | None = None
     include_defaulters_in_quorum: bool = False
@@ -142,6 +145,7 @@ class AttendanceQrRequest(BaseModel):
     qr_raw_data: str
     method: str = "qr_scan"
     source: str = "officer"
+    attendance_mode: str = "Physical"
 
 
 class AttendanceManualRequest(BaseModel):
@@ -149,6 +153,7 @@ class AttendanceManualRequest(BaseModel):
     house_id: str | None = None
     name: str | None = None
     source: str = "officer"
+    attendance_mode: str = "Physical"
 
 
 class BallotAnswerRequest(BaseModel):
@@ -182,6 +187,33 @@ def is_owner(user_type: str) -> bool:
     return "owner" in clean(user_type).casefold()
 
 
+def normalize_attendance_modes(values: list[str] | str | None) -> list[str]:
+    if isinstance(values, str):
+        try:
+            decoded = json.loads(values)
+            values = decoded if isinstance(decoded, list) else []
+        except json.JSONDecodeError:
+            values = [values]
+    modes: list[str] = []
+    seen: set[str] = set()
+    for value in values or []:
+        mode = clean(value)
+        key = mode.casefold()
+        if mode and key not in seen:
+            modes.append(mode)
+            seen.add(key)
+    return modes or DEFAULT_ATTENDANCE_MODES.copy()
+
+
+def normalize_attendance_mode(value: str | None, election: dict[str, Any]) -> str:
+    modes = normalize_attendance_modes(election.get("attendance_modes"))
+    requested = clean(value) or modes[0]
+    for mode in modes:
+        if mode.casefold() == requested.casefold():
+            return mode
+    raise HTTPException(status_code=400, detail="Attendance mode is not configured for this election")
+
+
 ELECTION_STATUSES = {
     "draft",
     "attendance_open",
@@ -197,6 +229,7 @@ RUN_STATUS_TRANSITIONS = {
     "draft": {"attendance_open"},
     "attendance_open": {"voting_open", "voting_closed"},
     "voting_open": {"voting_closed"},
+    "voting_closed": {"attendance_open"},
 }
 ATTENDANCE_OPEN_STATUSES = {"attendance_open", "voting_open"}
 
@@ -337,6 +370,7 @@ def election_public(row: dict[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "quorum_percent": quorum_percent,
         "voting_enabled": row["voting_enabled"],
+        "attendance_modes": normalize_attendance_modes(row.get("attendance_modes")),
         "passing_rule": row["passing_rule"],
         "passing_threshold_percent": (
             float(row["passing_threshold_percent"]) if row["passing_threshold_percent"] is not None else None
@@ -444,8 +478,8 @@ def ensure_proxy_editable(cur, election_id: str | None) -> None:
     election = cur.fetchone()
     if not election:
         raise HTTPException(status_code=404, detail="Election not found")
-    if election["status"] != "draft":
-        raise HTTPException(status_code=409, detail="Proxy changes are locked after attendance starts")
+    if election["status"] not in {"draft", "attendance_open"}:
+        raise HTTPException(status_code=409, detail="Proxy changes are locked after voting starts")
 
 
 def ensure_status_transition_allowed(cur, election_id: str, next_status: str) -> dict[str, Any]:
@@ -467,6 +501,8 @@ def ensure_status_transition_allowed(cur, election_id: str, next_status: str) ->
         raise HTTPException(status_code=409, detail="Voting is disabled for this election")
     if next_status == "voting_closed" and current_status == "attendance_open" and election["voting_enabled"]:
         raise HTTPException(status_code=409, detail="Open voting before closing a voting-enabled election")
+    if current_status == "voting_closed" and next_status == "attendance_open" and election["voting_enabled"]:
+        raise HTTPException(status_code=409, detail="Attendance can be reopened only for attendance-only elections")
     if next_status == "voting_open" and not election_public(election)["quorum_reached"]:
         raise HTTPException(status_code=409, detail="Quorum must be reached before voting opens")
     return election
@@ -686,15 +722,16 @@ def list_elections() -> list[dict[str, Any]]:
 def create_election(payload: ElectionCreate) -> dict[str, Any]:
     passing_rule = validate_choice(payload.passing_rule, PASSING_RULES, "passing rule")
     passing_threshold = normalize_passing_threshold(passing_rule, payload.passing_threshold_percent)
+    attendance_modes = normalize_attendance_modes(payload.attendance_modes)
     with connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO elections (
-                  title, description, quorum_percent, voting_enabled, passing_rule, passing_threshold_percent,
+                  title, description, quorum_percent, voting_enabled, attendance_modes, passing_rule, passing_threshold_percent,
                   include_defaulters_in_quorum, allow_defaulters_to_vote
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -702,6 +739,7 @@ def create_election(payload: ElectionCreate) -> dict[str, Any]:
                     payload.description,
                     payload.quorum_percent,
                     payload.voting_enabled,
+                    json.dumps(attendance_modes),
                     passing_rule,
                     passing_threshold,
                     payload.include_defaulters_in_quorum,
@@ -731,6 +769,7 @@ def get_election(election_id: str) -> dict[str, Any]:
 def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]:
     passing_rule = validate_choice(payload.passing_rule, PASSING_RULES, "passing rule")
     passing_threshold = normalize_passing_threshold(passing_rule, payload.passing_threshold_percent)
+    attendance_modes = normalize_attendance_modes(payload.attendance_modes)
     with connection() as conn:
         with conn.cursor() as cur:
             ensure_election_config_editable(cur, election_id)
@@ -741,6 +780,7 @@ def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]
                     description = %s,
                     quorum_percent = %s,
                     voting_enabled = %s,
+                    attendance_modes = %s::jsonb,
                     passing_rule = %s,
                     passing_threshold_percent = %s,
                     include_defaulters_in_quorum = %s,
@@ -754,6 +794,7 @@ def update_election(election_id: str, payload: ElectionUpdate) -> dict[str, Any]
                     clean(payload.description),
                     payload.quorum_percent,
                     payload.voting_enabled,
+                    json.dumps(attendance_modes),
                     passing_rule,
                     passing_threshold,
                     payload.include_defaulters_in_quorum,
@@ -992,6 +1033,7 @@ def mark_qr_attendance(election_id: str, payload: AttendanceQrRequest) -> dict[s
         election_id=election_id,
         method=payload.method,
         source=payload.source,
+        attendance_mode=payload.attendance_mode,
         raw_qr_data=payload.qr_raw_data,
         passcode=passcode,
     )
@@ -1003,6 +1045,7 @@ def mark_manual_attendance(election_id: str, payload: AttendanceManualRequest) -
         election_id=election_id,
         method="manual",
         source=payload.source,
+        attendance_mode=payload.attendance_mode,
         user_id=payload.user_id,
         house_id=payload.house_id,
         name=payload.name,
@@ -1149,6 +1192,7 @@ def actual_attendee_report(election_id: str) -> Response:
                 SELECT DISTINCT
                   v.house_no AS flat,
                   r.name,
+                  ar.attendance_mode,
                   r.user_id,
                   r.house_id
                 FROM attendance_records ar
@@ -1170,8 +1214,8 @@ def actual_attendee_report(election_id: str) -> Response:
             )
             rows = cur.fetchall()
     content = csv_text(
-        ["Flat", "Name", "User Id (Do Not Edit)", "House Id (Do Not Edit)"],
-        [[row["flat"], row["name"], row["user_id"], row["house_id"]] for row in rows],
+        ["Flat", "Name", "Attendance Mode", "User Id (Do Not Edit)", "House Id (Do Not Edit)"],
+        [[row["flat"], row["name"], row["attendance_mode"], row["user_id"], row["house_id"]] for row in rows],
     )
     return csv_response(content, f"{slugify(election['title'])}-actual-attendees-mygate.csv")
 
@@ -1185,8 +1229,18 @@ def proxy_holder_email_report(election_id: str) -> Response:
                 raise HTTPException(status_code=404, detail="Election not found")
             cur.execute(
                 """
-                SELECT DISTINCT p.proxy_holder_email AS email
+                SELECT DISTINCT
+                  gv.house_no AS grantor_villa,
+                  hv.house_no AS proxy_holder_villa,
+                  r.name AS proxy_holder_name,
+                  ar.attendance_mode AS attendance_mode,
+                  p.proxy_holder_email AS proxy_holder_email
                 FROM proxies p
+                JOIN villas gv ON gv.house_id = p.grantor_house_id
+                JOIN villas hv ON hv.house_id = p.proxy_holder_house_id
+                JOIN residents r
+                  ON r.user_id = p.proxy_holder_user_id
+                 AND r.house_id = p.proxy_holder_house_id
                 JOIN attendance_records ar
                   ON ar.election_id = p.election_id
                  AND ar.resident_user_id = p.proxy_holder_user_id
@@ -1199,12 +1253,24 @@ def proxy_holder_email_report(election_id: str) -> Response:
                 WHERE p.election_id = %s
                   AND p.status = 'active'
                   AND NULLIF(trim(p.proxy_holder_email), '') IS NOT NULL
-                ORDER BY p.proxy_holder_email
+                ORDER BY gv.house_no, hv.house_no, r.name, ar.attendance_mode, p.proxy_holder_email
                 """,
                 (election_id,),
             )
             rows = cur.fetchall()
-    content = csv_text(["Email"], [[row["email"]] for row in rows])
+    content = csv_text(
+        ["Grantor Villa", "Proxy Holder Villa", "Proxy Holder Name", "Attendance Mode", "Proxy Holder Email"],
+        [
+            [
+                row["grantor_villa"],
+                row["proxy_holder_villa"],
+                row["proxy_holder_name"],
+                row["attendance_mode"],
+                row["proxy_holder_email"],
+            ]
+            for row in rows
+        ],
+    )
     return csv_response(content, f"{slugify(election['title'])}-proxy-holder-emails-google-survey.csv")
 
 
@@ -1234,6 +1300,12 @@ def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
     with connection() as conn:
         with conn.cursor() as cur:
             ensure_proxy_editable(cur, payload.election_id)
+            election = None
+            if payload.election_id:
+                cur.execute("SELECT * FROM elections WHERE id = %s", (payload.election_id,))
+                election = cur.fetchone()
+                if not election:
+                    raise HTTPException(status_code=404, detail="Election not found")
             cur.execute("SELECT house_id FROM villas WHERE house_id = %s", (normalize_id(payload.grantor_house_id),))
             if not cur.fetchone():
                 raise HTTPException(status_code=404, detail="Grantor villa was not found")
@@ -1279,6 +1351,7 @@ def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
                 ),
             )
             proxy = cur.fetchone()
+            applied_representations = reconcile_proxy_representations(cur, election, proxy) if election else 0
         conn.commit()
     return {
         "id": str(proxy["id"]),
@@ -1291,6 +1364,7 @@ def create_proxy(payload: ProxyCreate) -> dict[str, Any]:
         "notes": proxy["notes"],
         "created_at": proxy["created_at"],
         "updated_at": proxy["updated_at"],
+        "applied_representations": applied_representations,
     }
 
 
@@ -1335,14 +1409,15 @@ def list_proxies(election_id: str | None = None) -> list[dict[str, Any]]:
 
 
 @app.post("/api/proxies/{proxy_id}/cancel", dependencies=[Depends(require_officer)])
-def cancel_proxy(proxy_id: str) -> dict[str, str]:
+def cancel_proxy(proxy_id: str) -> dict[str, Any]:
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT election_id FROM proxies WHERE id = %s", (proxy_id,))
+            cur.execute("SELECT * FROM proxies WHERE id = %s", (proxy_id,))
             proxy = cur.fetchone()
             if not proxy:
                 raise HTTPException(status_code=404, detail="Proxy not found")
             ensure_proxy_editable(cur, str(proxy["election_id"]) if proxy["election_id"] else None)
+            removed_representations = remove_proxy_representations(cur, proxy)
             cur.execute(
                 """
                 UPDATE proxies SET status = 'cancelled', updated_at = now()
@@ -1355,7 +1430,7 @@ def cancel_proxy(proxy_id: str) -> dict[str, str]:
         conn.commit()
     if not cancelled:
         raise HTTPException(status_code=404, detail="Proxy not found")
-    return {"status": "cancelled"}
+    return {"status": "cancelled", "removed_representations": removed_representations}
 
 
 @app.post("/api/defaulters", dependencies=[Depends(require_officer)])
@@ -1585,6 +1660,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
               AND d.status = 'active'
           ) AS is_defaulter,
           MAX(ar.attended_at) AS last_attended_at,
+          (array_agg(ar.attendance_mode ORDER BY ar.attended_at DESC))[1] AS attendance_mode,
           jsonb_agg(
               jsonb_build_object(
                 'user_id', r.user_id,
@@ -1595,6 +1671,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
                 'house_no', v.house_no,
                 'attended_at', ar.attended_at,
                 'method', ar.method,
+                'attendance_mode', ar.attendance_mode,
                 'source', ar.source
             )
             ORDER BY ar.attended_at
@@ -1643,6 +1720,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
               AND d.status = 'active'
           ) AS is_defaulter,
           ar.attended_at AS last_attended_at,
+          ar.attendance_mode AS attendance_mode,
           jsonb_build_array(
             jsonb_build_object(
               'user_id', r.user_id,
@@ -1653,6 +1731,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
               'house_no', rv.house_no,
               'attended_at', ar.attended_at,
               'method', ar.method,
+              'attendance_mode', ar.attendance_mode,
               'source', ar.source
             )
           ) AS participants,
@@ -1697,6 +1776,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
             SELECT v.house_id, v.house_no,
               true AS is_defaulter,
               MAX(ar.attended_at) AS last_attended_at,
+              (array_agg(ar.attendance_mode ORDER BY ar.attended_at DESC))[1] AS attendance_mode,
               jsonb_agg(
                 jsonb_build_object(
                   'user_id', r.user_id,
@@ -1707,6 +1787,7 @@ def attendance_villa_rows(cur, election: dict[str, Any]) -> list[dict[str, Any]]
                   'house_no', rv.house_no,
                   'attended_at', ar.attended_at,
                   'method', ar.method,
+                  'attendance_mode', ar.attendance_mode,
                   'source', ar.source
                 )
                 ORDER BY ar.attended_at
@@ -1769,6 +1850,7 @@ def attendance_villa_row_public(
         "flat": row["house_no"],
         "representationType": representation_type,
         "isProxy": representation_type == "proxy",
+        "attendanceMode": row.get("attendance_mode") or "",
         "isDefaulter": is_defaulter,
         "counted": counted,
         "participants": participants,
@@ -1784,6 +1866,7 @@ def mark_attendance(
     election_id: str,
     method: str,
     source: str,
+    attendance_mode: str,
     raw_qr_data: str | None = None,
     passcode: str | None = None,
     user_id: str | None = None,
@@ -1799,6 +1882,7 @@ def mark_attendance(
                 raise HTTPException(status_code=404, detail="Election not found")
             if election["status"] not in ATTENDANCE_OPEN_STATUSES:
                 raise HTTPException(status_code=409, detail="Attendance can be marked only during Attendance or Voting")
+            normalized_attendance_mode = normalize_attendance_mode(attendance_mode, election)
 
             resident = find_resident_for_attendance(cur, passcode=passcode, user_id=user_id, house_id=house_id, name=name)
             if not resident:
@@ -1811,6 +1895,7 @@ def mark_attendance(
                 election_id=election_id,
                 house_id=resident["house_id"],
                 method=method,
+                attendance_mode=normalized_attendance_mode,
                 source=source,
                 raw_qr_data=raw_qr_data,
             )
@@ -1845,6 +1930,7 @@ def add_owner_attendance_records(
     election_id: str,
     house_id: str,
     method: str,
+    attendance_mode: str,
     source: str,
     raw_qr_data: str | None,
 ) -> list[dict[str, Any]]:
@@ -1866,7 +1952,7 @@ def add_owner_attendance_records(
     for owner_user_id in owners:
         cur.execute(
             """
-            SELECT id, resident_user_id, house_id, attended_at
+            SELECT id, resident_user_id, house_id, attendance_mode, attended_at
             FROM attendance_records
             WHERE election_id = %s
               AND resident_user_id = %s
@@ -1883,12 +1969,12 @@ def add_owner_attendance_records(
         cur.execute(
             """
             INSERT INTO attendance_records (
-              election_id, resident_user_id, house_id, method, source, raw_qr_data
+              election_id, resident_user_id, house_id, method, attendance_mode, source, raw_qr_data
             )
-            VALUES (%s, %s, %s, %s, %s, %s)
-            RETURNING id, resident_user_id, house_id, attended_at
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, resident_user_id, house_id, attendance_mode, attended_at
             """,
-            (election_id, owner_user_id, normalize_id(house_id), method, source, raw_qr_data),
+            (election_id, owner_user_id, normalize_id(house_id), method, attendance_mode, source, raw_qr_data),
         )
         rows.append(cur.fetchone())
     return rows
@@ -2000,6 +2086,96 @@ def add_proxy_representations(
             election["id"],
         ),
     )
+
+
+def reconcile_proxy_representations(cur, election: dict[str, Any], proxy: dict[str, Any]) -> int:
+    if not election or not proxy or proxy["status"] != "active":
+        return 0
+    defaulter_filter = ""
+    params: tuple[Any, ...]
+    if not election["include_defaulters_in_quorum"]:
+        defaulter_filter = """
+          AND NOT EXISTS (
+            SELECT 1
+            FROM defaulters d
+            WHERE d.election_id = %s
+              AND d.house_id = p.grantor_house_id
+              AND d.status = 'active'
+          )
+        """
+        params = (
+            election["id"],
+            proxy["grantor_house_id"],
+            proxy["proxy_holder_user_id"],
+            election["id"],
+            proxy["id"],
+            election["id"],
+        )
+    else:
+        params = (
+            election["id"],
+            proxy["grantor_house_id"],
+            proxy["proxy_holder_user_id"],
+            election["id"],
+            proxy["id"],
+        )
+    cur.execute(
+        f"""
+        INSERT INTO villa_representations (
+          election_id, house_id, represented_by_user_id, representation_type, source_attendance_record_id
+        )
+        SELECT %s, p.grantor_house_id, p.proxy_holder_user_id, 'proxy', ar.id
+        FROM proxies p
+        JOIN attendance_records ar
+          ON ar.election_id = p.election_id
+         AND ar.resident_user_id = p.proxy_holder_user_id
+         AND ar.house_id = p.proxy_holder_house_id
+        WHERE p.status = 'active'
+          AND p.grantor_house_id = %s
+          AND p.proxy_holder_user_id = %s
+          AND p.election_id = %s
+          AND p.id = %s
+          {defaulter_filter}
+        ON CONFLICT (election_id, house_id) DO NOTHING
+        """,
+        params,
+    )
+    return cur.rowcount
+
+
+def remove_proxy_representations(cur, proxy: dict[str, Any]) -> int:
+    cur.execute(
+        """
+        SELECT 1
+        FROM ballots
+        WHERE election_id = %s
+          AND house_id = %s
+        LIMIT 1
+        """,
+        (proxy["election_id"], proxy["grantor_house_id"]),
+    )
+    if cur.fetchone():
+        raise HTTPException(status_code=409, detail="Cannot delete proxy after votes have been submitted for this villa")
+
+    cur.execute(
+        """
+        DELETE FROM villa_representations vr
+        USING attendance_records ar
+        WHERE vr.source_attendance_record_id = ar.id
+          AND vr.election_id = %s
+          AND vr.house_id = %s
+          AND vr.represented_by_user_id = %s
+          AND vr.representation_type = 'proxy'
+          AND ar.house_id = %s
+        """,
+        (
+            proxy["election_id"],
+            proxy["grantor_house_id"],
+            proxy["proxy_holder_user_id"],
+            proxy["proxy_holder_house_id"],
+        ),
+    )
+    return cur.rowcount
 
 
 def fetch_resident_by_user_id(cur, user_id: str, house_id: str | None = None) -> dict[str, Any] | None:

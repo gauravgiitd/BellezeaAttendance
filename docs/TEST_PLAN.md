@@ -20,7 +20,8 @@ This checklist covers the main behavior that can regress in the election portal.
 - Question and choice image URLs are stored.
 - Passing rule is election-level, not question-level.
 - Custom passing threshold requires a custom threshold value.
-- Election settings, proxy management, and defaulter management are locked after attendance starts.
+- Election settings and defaulter management are locked after attendance starts.
+- Proxy management remains editable during attendance and locks once voting starts.
 - Quorum can still be changed during attendance.
 - Quorum is locked once voting starts.
 - Questions can be edited during attendance but not after voting starts.
@@ -36,6 +37,8 @@ This checklist covers the main behavior that can regress in the election portal.
 - Attendance cannot be marked in draft or closed elections.
 - Attendance can be marked during attendance and voting stages.
 - Attendance-only elections can move from attendance to closed without a voting stage.
+- Attendance-only elections can be reopened from closed back to attendance.
+- Election-specific attendance modes can be configured and are stored on each attendance record.
 
 ## Quorum And Defaulters
 
@@ -55,16 +58,17 @@ This checklist covers the main behavior that can regress in the election portal.
 - Proxy holder email is stored with the proxy and normalized consistently.
 - One active proxy per grantor villa per election is allowed.
 - Duplicate active proxy for the same grantor villa in the same election is rejected.
-- Proxy management is locked after attendance starts.
+- Proxy management changes during attendance reconcile already-marked attendees.
 - When a proxy holder attends, the grantor villa is represented as proxy.
 - Proxy grantor villas marked as defaulters are excluded from counted representation when defaulters are excluded.
 
 ## Reports
 
 - Actual Attendee Report for MyGate contains only actual attendees for villas counted through `villa_representations`.
+- Actual Attendee Report includes attendance mode as the third column.
 - Actual Attendee Report excludes proxy-only grantor villas.
 - Actual Attendee Report excludes defaulter actual attendees when the defaulter villa is not counted.
-- Proxy Attendee Report for Google Survey contains only emails for attended proxy holders whose proxy grantor villa is counted.
+- Proxy Attendee Report for Google Survey contains grantor villa, proxy holder villa, proxy holder name, attendance mode, and proxy holder email for attended proxy holders whose proxy grantor villa is counted.
 - Proxy Attendee Report excludes proxies whose proxy holder did not attend.
 - Proxy Attendee Report excludes defaulter grantor villas when defaulters are not counted.
 

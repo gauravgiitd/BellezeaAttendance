@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Nambiar Bellezea Elections</title>
-    <link rel="stylesheet" href="styles.css?v=20260528-6">
+    <link rel="stylesheet" href="styles.css?v=20260606-1">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
-    <script src="config.js?v=20260528-6" defer></script>
-    <script src="app.js?v=20260528-6" defer></script>
+    <script src="config.js?v=20260606-1" defer></script>
+    <script src="app.js?v=20260606-1" defer></script>
   </head>
   <body>
     <main class="app-shell">
@@ -237,6 +237,10 @@
               <span>Enable voting for this election</span>
             </label>
             <label>
+              <span>Attendance modes</span>
+              <input id="attendance-modes" type="text" autocomplete="off" value="Physical, Virtual">
+            </label>
+            <label>
               <span>Passing rule</span>
               <div class="passing-rule-control">
                 <select id="passing-rule">
@@ -296,6 +300,10 @@
             <section class="pane attendance-pane" aria-label="Take attendance">
               <div class="pane-head">
                 <h2>Take Attendance</h2>
+              </div>
+              <div class="attendance-mode-control" aria-label="Attendance mode">
+                <span>Mode</span>
+                <div id="attendance-mode-options" class="segmented-control"></div>
               </div>
 
               <ol class="scan-steps" aria-label="MyGate QR steps">

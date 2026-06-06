@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS elections (
   status text NOT NULL DEFAULT 'draft',
   quorum_percent numeric(6,3) NOT NULL DEFAULT 50.000,
   voting_enabled boolean NOT NULL DEFAULT true,
+  attendance_modes jsonb NOT NULL DEFAULT '["Physical", "Virtual"]'::jsonb,
   passing_rule text NOT NULL DEFAULT 'simple_majority',
   passing_threshold_percent numeric(6,3),
   include_defaulters_in_quorum boolean NOT NULL DEFAULT false,
@@ -96,6 +97,15 @@ ALTER TABLE elections
 
 ALTER TABLE elections
   ADD COLUMN IF NOT EXISTS voting_enabled boolean NOT NULL DEFAULT true;
+
+ALTER TABLE elections
+  ADD COLUMN IF NOT EXISTS attendance_modes jsonb NOT NULL DEFAULT '["Physical", "Virtual"]'::jsonb;
+
+UPDATE elections
+SET attendance_modes = '["Physical", "Virtual"]'::jsonb
+WHERE attendance_modes IS NULL
+   OR jsonb_typeof(attendance_modes) <> 'array'
+   OR jsonb_array_length(attendance_modes) = 0;
 
 DO $$
 BEGIN
@@ -221,6 +231,7 @@ CREATE TABLE IF NOT EXISTS attendance_records (
   resident_user_id text NOT NULL,
   house_id text NOT NULL REFERENCES villas(house_id),
   method text NOT NULL,
+  attendance_mode text NOT NULL DEFAULT 'Physical',
   source text NOT NULL DEFAULT 'officer',
   raw_qr_data text,
   attended_at timestamptz NOT NULL DEFAULT now(),
@@ -242,6 +253,9 @@ BEGIN
       REFERENCES residents(user_id, house_id);
   END IF;
 END $$;
+
+ALTER TABLE attendance_records
+  ADD COLUMN IF NOT EXISTS attendance_mode text NOT NULL DEFAULT 'Physical';
 
 CREATE INDEX IF NOT EXISTS idx_attendance_records_election ON attendance_records(election_id);
 CREATE INDEX IF NOT EXISTS idx_attendance_records_house ON attendance_records(election_id, house_id);
