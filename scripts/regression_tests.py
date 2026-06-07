@@ -455,7 +455,7 @@ class RegressionHarness:
         assert summary_row[4] == f'=COUNTIF(E{DATA_START_ROW}:E{last_row},"Yes")'
         assert summary_row[5] == f'=COUNTIF(F{DATA_START_ROW}:F{last_row},"Yes")'
         assert summary_row[6] == f'=COUNTIF(G{DATA_START_ROW}:G{last_row},"Yes")'
-        assert summary_row[7] == "=IF(A1=0,0,G1/A1*100)"
+        assert summary_row[7] == "=IF(A1-D1=0,0,G1/(A1-D1)*100)"
 
         rows_by_villa = {row[0]: row for row in rows}
 
@@ -482,6 +482,24 @@ class RegressionHarness:
         assert untouched_row[1:6] == ["", "", "", "", ""]
         untouched_row_number = sheet_row_number("Harness Tenant Only")
         assert untouched_row[6] == f'=IF(OR(E{untouched_row_number}="Yes",F{untouched_row_number}="Yes"),"Yes","")'
+
+        included = self.create_election("backup sheet rows included defaulters", include_defaulters=True)
+        included_id = included["id"]
+        self.add_defaulter(included_id, VILLA_C)
+        self.set_status(included_id, "attendance_open")
+        self.mark_manual(included_id, VILLA_C, attendance_mode="Physical")
+
+        with self.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM elections WHERE id = %s", (included_id,))
+                included_row = cur.fetchone()
+                _, included_summary, included_rows = build_attendance_sheet_rows(cur, included_row)
+
+        included_last_row = DATA_START_ROW + len(included_rows) - 1
+        assert included_summary[7] == "=IF(A1=0,0,G1/A1*100)"
+        included_by_villa = {row[0]: row for row in included_rows}
+        assert included_by_villa["Harness Villa C"][1:6] == ["", "", "Yes", "Yes", ""]
+        assert included_summary[0] == f"=COUNTA(A{DATA_START_ROW}:A{included_last_row})"
 
     def test_election_lifecycle_and_locks(self) -> None:
         voting_election = self.create_election("lifecycle locks", voting_enabled=True, quorum_percent="99")

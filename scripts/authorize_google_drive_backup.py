@@ -77,18 +77,13 @@ def main() -> int:
     client_id, client_secret = oauth_client_credentials()
     if not client_id or not client_secret:
         print(
-            "Set OAuth client credentials in .env.local first.\n"
-            "Recommended (Desktop OAuth client):\n"
+            "Set Desktop OAuth client credentials in .env.local first:\n"
             "  GOOGLE_DRIVE_OAUTH_CLIENT_ID=...\n"
             "  GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=...\n"
-            "Fallback:\n"
-            "  GOOGLE_CLIENT_ID=...\n"
-            "  GOOGLE_CLIENT_SECRET=...",
+            "Do not use GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET; officer login uses a Web client.",
             file=sys.stderr,
         )
         return 1
-
-    using_drive_client = bool(os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip())
     host = os.environ.get("GOOGLE_OAUTH_LOCAL_HOST", DEFAULT_OAUTH_HOST).strip() or DEFAULT_OAUTH_HOST
 
     try:
@@ -105,13 +100,6 @@ def main() -> int:
     print(f"OAuth client ID: {client_id}")
     print(f"Redirect URI:    {redirect_uri}")
     print()
-    if not using_drive_client:
-        print("Warning: using GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET.")
-        print("Officer login uses a Web OAuth client; that often fails for this localhost flow.")
-        print("Create a separate OAuth client of type Desktop app and set:")
-        print("  GOOGLE_DRIVE_OAUTH_CLIENT_ID")
-        print("  GOOGLE_DRIVE_OAUTH_CLIENT_SECRET")
-        print()
     print("In Google Cloud Console:")
     print("  APIs & Services → Credentials")
     print("  Open the OAuth client whose Client ID matches the value above")
@@ -165,10 +153,9 @@ def main() -> int:
         )
         return 1
 
-    print("\nAdd these lines to .env.local:\n")
-    if using_drive_client:
-        print(f'GOOGLE_DRIVE_OAUTH_CLIENT_ID="{client_id}"')
-        print(f'GOOGLE_DRIVE_OAUTH_CLIENT_SECRET="{client_secret}"')
+    print("\nAdd these lines to .env.local and Render (bellezea-elections-api env):\n")
+    print(f'GOOGLE_DRIVE_OAUTH_CLIENT_ID="{client_id}"')
+    print(f'GOOGLE_DRIVE_OAUTH_CLIENT_SECRET="{client_secret}"')
     print(f'GOOGLE_DRIVE_REFRESH_TOKEN="{credentials.refresh_token}"')
     print("\nThen restart ./scripts/start_local_api.sh")
     return 0

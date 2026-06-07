@@ -6,6 +6,7 @@ const manualVillaResults = document.querySelector('#manual-villa-results');
 const readerElement = document.querySelector('#qr-reader');
 const statusElement = document.querySelector('#status');
 const totalVillasElement = document.querySelector('#total-villas');
+const totalVillasExcludedElement = document.querySelector('#total-villas-excluded');
 const representedVillasElement = document.querySelector('#represented-villas');
 const representationPctElement = document.querySelector('#representation-pct');
 const quorumRequiredElement = document.querySelector('#quorum-required');
@@ -958,8 +959,25 @@ function renderQuestions() {
   `).join('');
 }
 
+function renderTotalVillasMetric(totalVillas, excludedFromQuorum) {
+  totalVillasElement.textContent = formatInt(totalVillas);
+  const excluded = Number(excludedFromQuorum || 0);
+  if (excluded > 0 && totalVillasExcludedElement) {
+    const label = excluded === 1 ? 'villa' : 'villas';
+    totalVillasExcludedElement.textContent = `${formatInt(excluded)} ${label} excluded from quorum`;
+    totalVillasExcludedElement.hidden = false;
+  } else if (totalVillasExcludedElement) {
+    totalVillasExcludedElement.textContent = '';
+    totalVillasExcludedElement.hidden = true;
+  }
+}
+
 function renderEmptyDashboard() {
   totalVillasElement.textContent = '-';
+  if (totalVillasExcludedElement) {
+    totalVillasExcludedElement.textContent = '';
+    totalVillasExcludedElement.hidden = true;
+  }
   representedVillasElement.textContent = '-';
   representationPctElement.textContent = '-';
   quorumRequiredElement.textContent = '-';
@@ -985,7 +1003,7 @@ function renderDashboard(data) {
   dashboardAttendees = attendees;
   activeElection = election;
 
-  totalVillasElement.textContent = formatInt(totalVillas);
+  renderTotalVillasMetric(totalVillas, data && data.excludedFromQuorum);
   representedVillasElement.textContent = formatInt(representedVillas);
   representationPctElement.textContent = `${formatPct(representationPct)}%`;
   quorumRequiredElement.textContent = election ? `${formatPct(election.quorum_percent)}%` : '-';
@@ -1986,6 +2004,9 @@ function publicAttendanceElectionHtml(item) {
           <div class="metric-block">
             <span>Total Villas</span>
             <strong>${escapeHtml(formatInt(item.totalVillas))}</strong>
+            ${item.excludedFromQuorum > 0
+              ? `<small class="metric-note">${escapeHtml(formatInt(item.excludedFromQuorum))} ${item.excludedFromQuorum === 1 ? 'villa' : 'villas'} excluded from quorum</small>`
+              : ''}
           </div>
           <div class="metric-block">
             <span>Represented</span>

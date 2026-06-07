@@ -1088,6 +1088,16 @@ select:focus {
   letter-spacing: 0;
 }
 
+.metric-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-transform: none;
+}
+
 .progress-track {
   height: 8px;
   margin-top: 10px;

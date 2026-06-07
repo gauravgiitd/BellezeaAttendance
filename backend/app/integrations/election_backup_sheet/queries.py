@@ -51,12 +51,20 @@ def attendance_pct_column_index(mode_count: int) -> int:
     return attended_column_index(mode_count) + 1
 
 
-def mode_cell_value(attended_mode: str | None, mode: str, is_defaulter: bool) -> str:
+def mode_cell_value(
+    attended_mode: str | None,
+    mode: str,
+    is_defaulter: bool,
+    *,
+    include_defaulters_in_quorum: bool,
+) -> str:
     if not attended_mode:
         return ""
     if attended_mode.casefold() != mode.casefold():
         return ""
-    return "Excluded" if is_defaulter else "Yes"
+    if is_defaulter and not include_defaulters_in_quorum:
+        return "Excluded"
+    return "Yes"
 
 
 def attended_row_formula(row_number: int, mode_count: int) -> str:
@@ -70,7 +78,12 @@ def attended_row_formula(row_number: int, mode_count: int) -> str:
     return f'=IF(OR({checks}),"Yes","")'
 
 
-def build_summary_row(villa_count: int, mode_count: int) -> list[str]:
+def build_summary_row(
+    villa_count: int,
+    mode_count: int,
+    *,
+    include_defaulters_in_quorum: bool,
+) -> list[str]:
     if villa_count == 0:
         return [""] * attendance_pct_column_index(mode_count)
 
@@ -87,7 +100,10 @@ def build_summary_row(villa_count: int, mode_count: int) -> list[str]:
         mode_col = column_letter(first_mode_column_index() + index)
         summary.append(f'=COUNTIF({mode_col}{DATA_START_ROW}:{mode_col}{last_data_row},"Yes")')
     summary.append(f'=COUNTIF({attended_col}{DATA_START_ROW}:{attended_col}{last_data_row},"Yes")')
-    summary.append(f"=IF(A1=0,0,{attended_col}1/A1*100)")
+    if include_defaulters_in_quorum:
+        summary.append(f"=IF(A1=0,0,{attended_col}1/A1*100)")
+    else:
+        summary.append(f"=IF(A1-D1=0,0,{attended_col}1/(A1-D1)*100)")
     return summary
 
 
@@ -96,6 +112,7 @@ def build_attendance_sheet_rows(
     election: dict[str, Any],
 ) -> tuple[list[str], list[str], list[list[str]]]:
     election_id = str(election["id"])
+    include_defaulters_in_quorum = bool(election.get("include_defaulters_in_quorum"))
     attendance_modes = normalize_attendance_modes(election.get("attendance_modes"))
     headers = attendance_sheet_headers(attendance_modes)
     mode_count = len(attendance_modes)
@@ -177,12 +194,21 @@ def build_attendance_sheet_rows(
             defaulter_label,
         ]
         row.extend(
-            mode_cell_value(attended_mode, mode, mode_defaulter)
+            mode_cell_value(
+                attended_mode,
+                mode,
+                mode_defaulter,
+                include_defaulters_in_quorum=include_defaulters_in_quorum,
+            )
             for mode in attendance_modes
         )
         row.append(attended_row_formula(sheet_row_number, mode_count))
         row.append("")
         data_rows.append(row)
 
-    summary_row = build_summary_row(len(data_rows), mode_count)
+    summary_row = build_summary_row(
+        len(data_rows),
+        mode_count,
+        include_defaulters_in_quorum=include_defaulters_in_quorum,
+    )
     return headers, summary_row, data_rows

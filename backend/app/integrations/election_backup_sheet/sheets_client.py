@@ -31,6 +31,8 @@ class ElectionBackupSheetsClient:
             raise RuntimeError("ELECTION_BACKUP_DRIVE_FOLDER_ID is not configured")
 
         credentials = load_drive_credentials()
+        if has_oauth_credentials():
+            verify_oauth_refresh(credentials)
         from googleapiclient.discovery import build
 
         drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
@@ -100,15 +102,26 @@ class ElectionBackupSheetsClient:
 
 
 def oauth_client_credentials() -> tuple[str, str]:
-    client_id = (
-        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip()
-        or os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    return (
+        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip(),
+        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip(),
     )
-    client_secret = (
-        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip()
-        or os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+
+
+def oauth_configuration_error() -> str | None:
+    refresh_token = os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN", "").strip()
+    if not refresh_token:
+        return None
+
+    client_id, client_secret = oauth_client_credentials()
+    if client_id and client_secret:
+        return None
+
+    return (
+        "GOOGLE_DRIVE_REFRESH_TOKEN is set but GOOGLE_DRIVE_OAUTH_CLIENT_ID and "
+        "GOOGLE_DRIVE_OAUTH_CLIENT_SECRET are missing. Backup sheets require a separate "
+        "Desktop OAuth client; do not substitute GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET."
     )
-    return client_id, client_secret
 
 
 def has_oauth_credentials() -> bool:
@@ -152,6 +165,10 @@ def load_drive_credentials():
 def load_oauth_credentials():
     from google.oauth2.credentials import Credentials
 
+    config_error = oauth_configuration_error()
+    if config_error:
+        raise RuntimeError(config_error)
+
     client_id, client_secret = oauth_client_credentials()
     return Credentials(
         token=None,
@@ -161,6 +178,23 @@ def load_oauth_credentials():
         client_secret=client_secret,
         scopes=SCOPES,
     )
+
+
+def verify_oauth_refresh(credentials) -> None:
+    from google.auth.exceptions import RefreshError
+    from google.auth.transport.requests import Request
+
+    try:
+        credentials.refresh(Request())
+    except RefreshError as exc:
+        raise RuntimeError(
+            "Google Drive OAuth refresh failed. The refresh token must be issued with the "
+            "same Desktop OAuth client as GOOGLE_DRIVE_OAUTH_CLIENT_ID/SECRET. Re-run "
+            "scripts/authorize_google_drive_backup.py, then copy all three GOOGLE_DRIVE_* "
+            "values to Render with no surrounding quotes. If the OAuth consent screen is in "
+            "Testing mode, publish it to Production or tokens expire after about 7 days. "
+            f"Google error: {exc}"
+        ) from exc
 
 
 def load_service_account_credentials():

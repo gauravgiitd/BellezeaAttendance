@@ -1273,12 +1273,25 @@ def attendance_dashboard_payload(election_id: str) -> dict[str, Any]:
             if not election:
                 raise HTTPException(status_code=404, detail="Election not found")
             attendees = attendance_villa_rows(cur, election)
+            excluded_from_quorum = 0
+            if not election["include_defaulters_in_quorum"]:
+                cur.execute(
+                    """
+                    SELECT COUNT(*) AS count
+                    FROM defaulters
+                    WHERE election_id = %s
+                      AND status = 'active'
+                    """,
+                    (election_id,),
+                )
+                excluded_from_quorum = int(cur.fetchone()["count"] or 0)
     election_data = election_public(election)
     represented = election_data["represented_villas"]
     eligible = election_data["eligible_villas"]
     return {
         "election": election_data,
         "totalVillas": eligible,
+        "excludedFromQuorum": excluded_from_quorum,
         "representedVillas": represented,
         "representationPct": (represented / eligible * 100) if eligible else 0,
         "attendees": attendees,
