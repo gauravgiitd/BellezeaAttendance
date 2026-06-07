@@ -168,6 +168,9 @@ class ElectionBackupSheetWorker:
                 logger.exception("Failed deleting election backup spreadsheet %s", spreadsheet_id)
 
     def bootstrap_missing_sheets(self) -> None:
+        if self._regression_harness_elections_present():
+            logger.info("Skipping backup bootstrap while regression harness elections exist")
+            return
         conn = self._get_work_conn()
         with conn.cursor() as cur:
             cur.execute(
@@ -294,6 +297,21 @@ class ElectionBackupSheetWorker:
         if not election:
             return True
         return is_regression_harness_election(election.get("title"))
+
+    def _regression_harness_elections_present(self) -> bool:
+        conn = self._get_work_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT EXISTS (
+                  SELECT 1
+                  FROM elections
+                  WHERE title LIKE 'Regression Harness:%'
+                ) AS present
+                """
+            )
+            row = cur.fetchone()
+        return bool(row and row["present"])
 
     @staticmethod
     def spreadsheet_title(election: dict[str, Any]) -> str:

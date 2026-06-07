@@ -75,6 +75,7 @@ def configure_environment(database_url: str) -> None:
     os.environ["OFFICER_AUTH_DISABLED"] = "true"
     os.environ["AUTO_MIGRATE"] = "false"
     os.environ["ELECTION_BACKUP_SHEET_WORKER_ENABLED"] = "false"
+    os.environ["REGRESSION_HARNESS_ACTIVE"] = "true"
 
 
 def should_skip_schema() -> bool:
@@ -86,24 +87,6 @@ def import_api():
     from backend.app.db import connection, initialize_schema
 
     return api, connection, initialize_schema
-
-
-def patch_regression_connection(api: Any, base_connection: Any):
-    from contextlib import contextmanager
-
-    @contextmanager
-    def regression_connection():
-        with base_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SET app.regression_harness_active = 'true'")
-                cur.execute("SET lock_timeout = '10s'")
-            yield conn
-
-    import backend.app.db as db_module
-
-    db_module.connection = regression_connection
-    api.connection = regression_connection
-    return regression_connection
 
 
 @dataclass
@@ -129,14 +112,14 @@ def question_choices(api: Any, choices: tuple[str, ...] = DEFAULT_CHOICES, with_
 
 class RegressionHarness:
     def __init__(self, keep_data: bool = False) -> None:
-        self.api, self._base_connection, self.initialize_schema = import_api()
-        self.connection = self._base_connection
+        self.api, self.connection, self.initialize_schema = import_api()
         self.keep_data = keep_data
 
     def run(self) -> int:
         if not should_skip_schema():
+            os.environ.pop("REGRESSION_HARNESS_ACTIVE", None)
             self.initialize_schema()
-        self.connection = patch_regression_connection(self.api, self._base_connection)
+            os.environ["REGRESSION_HARNESS_ACTIVE"] = "true"
         self.cleanup_all()
         self.seed_residents()
 

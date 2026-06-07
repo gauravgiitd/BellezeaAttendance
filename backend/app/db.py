@@ -17,9 +17,17 @@ def database_url() -> str:
     return url
 
 
+def _apply_session_settings(conn: psycopg.Connection) -> None:
+    if os.environ.get("REGRESSION_HARNESS_ACTIVE", "").lower() in {"1", "true", "yes"}:
+        with conn.cursor() as cur:
+            cur.execute("SET app.regression_harness_active = 'true'")
+            cur.execute("SET lock_timeout = '10s'")
+
+
 @contextmanager
 def connection():
     with psycopg.connect(database_url(), row_factory=dict_row) as conn:
+        _apply_session_settings(conn)
         yield conn
 
 
