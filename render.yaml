@@ -31,7 +31,17 @@ services:
         value: bellezea.elections@gmail.com
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_DRIVE_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_DRIVE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_DRIVE_OAUTH_CLIENT_SECRET
+        sync: false
       - key: RESIDENT_MASTER_CSV_URL
+        sync: false
+      - key: ELECTION_BACKUP_DRIVE_FOLDER_ID
         sync: false
 
 databases:

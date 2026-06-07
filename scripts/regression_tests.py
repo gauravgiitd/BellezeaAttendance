@@ -115,6 +115,7 @@ class RegressionHarness:
         tests: list[Callable[[], None]] = [
             self.test_resident_directory_and_qr_rules,
             self.test_resident_sync_cleanup,
+            self.test_election_backup_sheet_rows,
             self.test_election_lifecycle_and_locks,
             self.test_attendance_marks_all_owners_and_is_idempotent,
             self.test_attendance_stage_rules_and_qr_validation,
@@ -401,6 +402,72 @@ class RegressionHarness:
                 assert cleanup["removed_residents"] >= 1
                 assert cleanup["removed_villas"] >= 1
             conn.rollback()
+
+    def test_election_backup_sheet_rows(self) -> None:
+        from backend.app.integrations.election_backup_sheet.queries import (
+            DATA_START_ROW,
+            build_attendance_sheet_rows,
+        )
+
+        election = self.create_election("backup sheet rows")
+        election_id = election["id"]
+        self.add_defaulter(election_id, VILLA_C)
+        self.set_status(election_id, "attendance_open")
+        self.create_proxy(election_id, VILLA_A)
+        self.mark_manual(election_id, VILLA_B, attendance_mode="Virtual")
+        self.mark_manual(election_id, VILLA_C, attendance_mode="Physical")
+
+        with self.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
+                election_row = cur.fetchone()
+                headers, summary_row, rows = build_attendance_sheet_rows(cur, election_row)
+
+        assert headers == [
+            "Villa #",
+            "Proxy?",
+            "Proxy Villa",
+            "Defaulter?",
+            "Physical",
+            "Virtual",
+            "Attended",
+            "Attendance %",
+        ]
+        last_row = DATA_START_ROW + len(rows) - 1
+
+        assert summary_row[0] == f"=COUNTA(A{DATA_START_ROW}:A{last_row})"
+        assert summary_row[1] == f'=COUNTIF(B{DATA_START_ROW}:B{last_row},"Yes")'
+        assert summary_row[3] == f'=COUNTIF(D{DATA_START_ROW}:D{last_row},"Yes")'
+        assert summary_row[4] == f'=COUNTIF(E{DATA_START_ROW}:E{last_row},"Yes")'
+        assert summary_row[5] == f'=COUNTIF(F{DATA_START_ROW}:F{last_row},"Yes")'
+        assert summary_row[6] == f'=COUNTIF(G{DATA_START_ROW}:G{last_row},"Yes")'
+        assert summary_row[7] == "=IF(A1=0,0,G1/A1*100)"
+
+        rows_by_villa = {row[0]: row for row in rows}
+
+        def sheet_row_number(villa_name: str) -> int:
+            row_index = next(index for index, row in enumerate(rows) if row[0] == villa_name)
+            return DATA_START_ROW + row_index
+
+        grantor_row = rows_by_villa["Harness Villa A"]
+        assert grantor_row[1:6] == ["Yes", "Harness Villa B", "", "", "Yes"]
+        grantor_row_number = sheet_row_number("Harness Villa A")
+        assert grantor_row[6] == f'=IF(OR(E{grantor_row_number}="Yes",F{grantor_row_number}="Yes"),"Yes","")'
+
+        holder_row = rows_by_villa["Harness Villa B"]
+        assert holder_row[1:6] == ["", "", "", "", "Yes"]
+        holder_row_number = sheet_row_number("Harness Villa B")
+        assert holder_row[6] == f'=IF(OR(E{holder_row_number}="Yes",F{holder_row_number}="Yes"),"Yes","")'
+
+        defaulter_row = rows_by_villa["Harness Villa C"]
+        assert defaulter_row[1:6] == ["", "", "Yes", "Excluded", ""]
+        defaulter_row_number = sheet_row_number("Harness Villa C")
+        assert defaulter_row[6] == f'=IF(OR(E{defaulter_row_number}="Yes",F{defaulter_row_number}="Yes"),"Yes","")'
+
+        untouched_row = rows_by_villa["Harness Tenant Only"]
+        assert untouched_row[1:6] == ["", "", "", "", ""]
+        untouched_row_number = sheet_row_number("Harness Tenant Only")
+        assert untouched_row[6] == f'=IF(OR(E{untouched_row_number}="Yes",F{untouched_row_number}="Yes"),"Yes","")'
 
     def test_election_lifecycle_and_locks(self) -> None:
         voting_election = self.create_election("lifecycle locks", voting_enabled=True, quorum_percent="99")

@@ -20,4 +20,8 @@ if [[ -z "${RESIDENT_MASTER_CSV_URL:-}" && -z "${RESIDENT_MASTER_CSV_PATH:-}" ]]
   echo "Copy .env.local.example to .env.local to get started." >&2
 fi
 
+if [[ -n "${ELECTION_BACKUP_DRIVE_FOLDER_ID:-}" && -n "${GOOGLE_SERVICE_ACCOUNT_JSON_PATH:-}${GOOGLE_SERVICE_ACCOUNT_JSON:-}" ]]; then
+  echo "Election backup sheet worker will start with the API when configured in .env.local." >&2
+fi
+
 exec "$ROOT/.venv/bin/uvicorn" backend.app.main:app --host 127.0.0.1 --port 8000 --reload

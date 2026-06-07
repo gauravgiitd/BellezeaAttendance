@@ -18,6 +18,10 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from .db import connection, initialize_schema
+from .integrations.election_backup_sheet.worker import (
+    start_in_background as start_election_backup_worker,
+    stop_background as stop_election_backup_worker,
+)
 
 
 app = FastAPI(title="Nambiar Bellezea Election API")
@@ -565,6 +569,12 @@ def ensure_status_transition_allowed(cur, election_id: str, next_status: str) ->
 def on_startup() -> None:
     if os.environ.get("AUTO_MIGRATE", "true").lower() not in {"0", "false", "no"}:
         initialize_schema()
+    start_election_backup_worker()
+
+
+@app.on_event("shutdown")
+def on_shutdown() -> None:
+    stop_election_backup_worker()
 
 
 @app.get("/health")

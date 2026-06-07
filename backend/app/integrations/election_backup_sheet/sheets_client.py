@@ -1,0 +1,193 @@
+from __future__ import annotations
+
+import json
+import logging
+import os
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
+SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+SCOPES = [DRIVE_SCOPE, SHEETS_SCOPE]
+ATTENDANCE_TAB_NAME = "Attendance"
+SERVICE_ACCOUNT_STORAGE_ERROR = (
+    "Google service accounts cannot create Drive files in personal Gmail folders anymore "
+    "(storage limit is 0). Set GOOGLE_DRIVE_REFRESH_TOKEN using "
+    "scripts/authorize_google_drive_backup.py, or use a Google Workspace Shared Drive."
+)
+
+
+class ElectionBackupSheetsClient:
+    def __init__(self, drive_service: Any, sheets_service: Any, folder_id: str) -> None:
+        self.drive = drive_service
+        self.sheets = sheets_service
+        self.folder_id = folder_id
+
+    @classmethod
+    def from_env(cls) -> "ElectionBackupSheetsClient":
+        folder_id = os.environ.get("ELECTION_BACKUP_DRIVE_FOLDER_ID", "").strip()
+        if not folder_id:
+            raise RuntimeError("ELECTION_BACKUP_DRIVE_FOLDER_ID is not configured")
+
+        credentials = load_drive_credentials()
+        from googleapiclient.discovery import build
+
+        drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        sheets_service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
+        return cls(drive_service, sheets_service, folder_id)
+
+    def create_election_spreadsheet(self, title: str) -> dict[str, str]:
+        metadata = {
+            "name": title,
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "parents": [self.folder_id],
+        }
+        try:
+            created = (
+                self.drive.files()
+                .create(body=metadata, fields="id, webViewLink")
+                .execute()
+            )
+        except Exception as exc:
+            raise translate_drive_create_error(exc) from exc
+
+        spreadsheet_id = created["id"]
+        spreadsheet = self.sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        default_sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
+        self.sheets.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                "requests": [
+                    {
+                        "updateSheetProperties": {
+                            "properties": {
+                                "sheetId": default_sheet_id,
+                                "title": ATTENDANCE_TAB_NAME,
+                            },
+                            "fields": "title",
+                        }
+                    }
+                ]
+            },
+        ).execute()
+        return {
+            "spreadsheet_id": spreadsheet_id,
+            "spreadsheet_url": created.get("webViewLink", ""),
+        }
+
+    def update_attendance_tab(
+        self,
+        spreadsheet_id: str,
+        headers: list[str],
+        summary_row: list[str],
+        rows: list[list[str]],
+    ) -> None:
+        values = [summary_row, headers, *rows]
+        self.sheets.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=f"{ATTENDANCE_TAB_NAME}!A:ZZ",
+        ).execute()
+        self.sheets.spreadsheets().values().update(
+            spreadsheetId=spreadsheet_id,
+            range=f"{ATTENDANCE_TAB_NAME}!A1",
+            valueInputOption="USER_ENTERED",
+            body={"values": values},
+        ).execute()
+
+    def delete_spreadsheet(self, spreadsheet_id: str) -> None:
+        self.drive.files().delete(fileId=spreadsheet_id).execute()
+
+
+def oauth_client_credentials() -> tuple[str, str]:
+    client_id = (
+        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip()
+        or os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    )
+    client_secret = (
+        os.environ.get("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip()
+        or os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+    )
+    return client_id, client_secret
+
+
+def has_oauth_credentials() -> bool:
+    client_id, client_secret = oauth_client_credentials()
+    return bool(
+        os.environ.get("GOOGLE_DRIVE_REFRESH_TOKEN", "").strip()
+        and client_id
+        and client_secret
+    )
+
+
+def has_service_account_credentials() -> bool:
+    return bool(
+        os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+        or os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON_PATH", "").strip()
+    )
+
+
+def backup_sheets_enabled() -> bool:
+    folder_id = os.environ.get("ELECTION_BACKUP_DRIVE_FOLDER_ID", "").strip()
+    if not folder_id:
+        return False
+    return has_oauth_credentials() or has_service_account_credentials()
+
+
+def load_drive_credentials():
+    if has_oauth_credentials():
+        return load_oauth_credentials()
+    if has_service_account_credentials():
+        logger.warning(
+            "Using a Google service account for election backup sheets. "
+            "This usually fails for personal Gmail folders; prefer GOOGLE_DRIVE_REFRESH_TOKEN."
+        )
+        return load_service_account_credentials()
+    raise RuntimeError(
+        "Election backup sheets are not configured. Set GOOGLE_DRIVE_REFRESH_TOKEN with "
+        "GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, or provide a service account JSON."
+    )
+
+
+def load_oauth_credentials():
+    from google.oauth2.credentials import Credentials
+
+    client_id, client_secret = oauth_client_credentials()
+    return Credentials(
+        token=None,
+        refresh_token=os.environ["GOOGLE_DRIVE_REFRESH_TOKEN"].strip(),
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=SCOPES,
+    )
+
+
+def load_service_account_credentials():
+    from google.oauth2 import service_account
+
+    raw_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    json_path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON_PATH", "").strip()
+
+    if raw_json:
+        info = json.loads(raw_json)
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+
+    if json_path:
+        return service_account.Credentials.from_service_account_file(json_path, scopes=SCOPES)
+
+    raise RuntimeError(
+        "GOOGLE_SERVICE_ACCOUNT_JSON or GOOGLE_SERVICE_ACCOUNT_JSON_PATH is required for election backup sheets"
+    )
+
+
+def translate_drive_create_error(exc: Exception) -> RuntimeError:
+    message = str(exc)
+    if "storageQuotaExceeded" in message or "storage quota" in message.casefold():
+        if not has_oauth_credentials():
+            return RuntimeError(SERVICE_ACCOUNT_STORAGE_ERROR)
+        return RuntimeError(
+            "Google Drive refused to create the election backup sheet because the "
+            "authorized account is out of storage."
+        )
+    return RuntimeError(f"Could not create election backup Google Sheet: {message}")

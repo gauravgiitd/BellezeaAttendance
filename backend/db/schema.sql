@@ -306,3 +306,120 @@ CREATE TABLE IF NOT EXISTS audit_events (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS election_backup_sheets (
+  election_id uuid PRIMARY KEY REFERENCES elections(id) ON DELETE CASCADE,
+  spreadsheet_id text NOT NULL,
+  spreadsheet_url text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_synced_at timestamptz,
+  last_error text NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS election_backup_sheet_deletions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  election_id uuid NOT NULL,
+  spreadsheet_id text NOT NULL,
+  election_title text NOT NULL DEFAULT '',
+  queued_at timestamptz NOT NULL DEFAULT now(),
+  deleted_at timestamptz,
+  last_error text NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_election_backup_sheet_deletions_pending
+  ON election_backup_sheet_deletions(queued_at)
+  WHERE deleted_at IS NULL;
+
+CREATE OR REPLACE FUNCTION queue_election_backup_sheet_delete() RETURNS trigger AS $$
+DECLARE
+  sheet_id text;
+BEGIN
+  SELECT spreadsheet_id
+  INTO sheet_id
+  FROM election_backup_sheets
+  WHERE election_id = OLD.id;
+
+  IF sheet_id IS NOT NULL THEN
+    INSERT INTO election_backup_sheet_deletions (election_id, spreadsheet_id, election_title)
+    VALUES (OLD.id, sheet_id, OLD.title);
+    PERFORM pg_notify(
+      'election_backup_sync',
+      json_build_object('action', 'delete', 'spreadsheet_id', sheet_id)::text
+    );
+  END IF;
+
+  RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_election_backup_sheet_delete ON elections;
+CREATE TRIGGER trg_election_backup_sheet_delete
+  BEFORE DELETE ON elections
+  FOR EACH ROW
+  EXECUTE PROCEDURE queue_election_backup_sheet_delete();
+
+CREATE OR REPLACE FUNCTION notify_election_backup_sync() RETURNS trigger AS $$
+DECLARE
+  target_election_id uuid;
+BEGIN
+  IF TG_TABLE_NAME = 'elections' THEN
+    IF TG_OP = 'UPDATE' THEN
+      IF NEW.status = 'attendance_open' AND OLD.status IS DISTINCT FROM NEW.status THEN
+        PERFORM pg_notify(
+          'election_backup_sync',
+          json_build_object('action', 'create', 'election_id', NEW.id)::text
+        );
+      END IF;
+      IF NEW.status IN ('attendance_open', 'voting_open', 'voting_closed') THEN
+        PERFORM pg_notify(
+          'election_backup_sync',
+          json_build_object('action', 'sync', 'election_id', NEW.id)::text
+        );
+      END IF;
+    END IF;
+    RETURN NEW;
+  END IF;
+
+  IF TG_OP = 'DELETE' THEN
+    target_election_id := OLD.election_id;
+  ELSE
+    target_election_id := NEW.election_id;
+  END IF;
+
+  PERFORM pg_notify(
+    'election_backup_sync',
+    json_build_object('action', 'sync', 'election_id', target_election_id)::text
+  );
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_election_backup_sync_elections ON elections;
+CREATE TRIGGER trg_election_backup_sync_elections
+  AFTER UPDATE ON elections
+  FOR EACH ROW
+  EXECUTE PROCEDURE notify_election_backup_sync();
+
+DROP TRIGGER IF EXISTS trg_election_backup_sync_attendance ON attendance_records;
+CREATE TRIGGER trg_election_backup_sync_attendance
+  AFTER INSERT OR UPDATE OR DELETE ON attendance_records
+  FOR EACH ROW
+  EXECUTE PROCEDURE notify_election_backup_sync();
+
+DROP TRIGGER IF EXISTS trg_election_backup_sync_proxies ON proxies;
+CREATE TRIGGER trg_election_backup_sync_proxies
+  AFTER INSERT OR UPDATE OR DELETE ON proxies
+  FOR EACH ROW
+  EXECUTE PROCEDURE notify_election_backup_sync();
+
+DROP TRIGGER IF EXISTS trg_election_backup_sync_defaulters ON defaulters;
+CREATE TRIGGER trg_election_backup_sync_defaulters
+  AFTER INSERT OR UPDATE OR DELETE ON defaulters
+  FOR EACH ROW
+  EXECUTE PROCEDURE notify_election_backup_sync();
+
+DROP TRIGGER IF EXISTS trg_election_backup_sync_representations ON villa_representations;
+CREATE TRIGGER trg_election_backup_sync_representations
+  AFTER INSERT OR UPDATE OR DELETE ON villa_representations
+  FOR EACH ROW
+  EXECUTE PROCEDURE notify_election_backup_sync();
