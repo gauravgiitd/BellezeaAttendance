@@ -33,7 +33,9 @@ def connection():
 
 def initialize_schema() -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
+    lock_timeout = os.environ.get("SCHEMA_LOCK_TIMEOUT", "30s")
     with connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SET lock_timeout = %s", (lock_timeout,))
             cur.execute(schema_sql)
         conn.commit()

@@ -50,6 +50,9 @@ class ElectionBackupSheetWorker:
             self._work_conn.close()
         self._work_conn = None
 
+    def _release_read_transaction(self, conn: psycopg.Connection) -> None:
+        conn.commit()
+
     def _in_backoff(self, key: str) -> bool:
         return time.monotonic() < self._failure_backoff_until.get(key, 0)
 
@@ -168,6 +171,7 @@ class ElectionBackupSheetWorker:
                 """
             )
             pending = cur.fetchall()
+        self._release_read_transaction(conn)
 
         for row in pending:
             spreadsheet_id = row["spreadsheet_id"]
@@ -198,6 +202,7 @@ class ElectionBackupSheetWorker:
                 (list(BACKUP_SHEET_STATUSES),),
             )
             missing = [str(row["id"]) for row in cur.fetchall()]
+        self._release_read_transaction(conn)
 
         for election_id in missing:
             if self._in_backoff(election_id):
@@ -220,18 +225,23 @@ class ElectionBackupSheetWorker:
                 (election_id,),
             )
             if cur.fetchone():
+                self._release_read_transaction(conn)
                 return
 
             election = self.fetch_election(cur, election_id)
-            if not election:
-                return
-            if is_regression_harness_election(election.get("title")):
-                return
-            if election["status"] not in BACKUP_SHEET_STATUSES:
-                return
+        self._release_read_transaction(conn)
 
-            title = self.spreadsheet_title(election)
-            created = self.sheets_client.create_election_spreadsheet(title)
+        if not election:
+            return
+        if is_regression_harness_election(election.get("title")):
+            return
+        if election["status"] not in BACKUP_SHEET_STATUSES:
+            return
+
+        title = self.spreadsheet_title(election)
+        created = self.sheets_client.create_election_spreadsheet(title)
+
+        with conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO election_backup_sheets (election_id, spreadsheet_id, spreadsheet_url)
@@ -259,14 +269,18 @@ class ElectionBackupSheetWorker:
             )
             row = cur.fetchone()
             if not row:
+                self._release_read_transaction(conn)
                 return
             if is_regression_harness_election(row.get("title")):
+                self._release_read_transaction(conn)
                 return
             if row["status"] not in BACKUP_SHEET_STATUSES:
+                self._release_read_transaction(conn)
                 return
 
             headers, summary_row, sheet_rows = build_attendance_sheet_rows(cur, row)
             spreadsheet_id = row["spreadsheet_id"]
+        self._release_read_transaction(conn)
 
         try:
             self.sheets_client.update_attendance_tab(
@@ -276,20 +290,28 @@ class ElectionBackupSheetWorker:
                 sheet_rows,
             )
         except Exception as exc:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    UPDATE election_backup_sheets
-                    SET last_error = %s
-                    WHERE election_id = %s
-                    """,
-                    (str(exc), election_id),
-                )
-            conn.commit()
+            self._record_sync_error(election_id, str(exc))
             raise
         finally:
             del headers, summary_row, sheet_rows
 
+        self._record_sync_success(election_id)
+
+    def _record_sync_error(self, election_id: str, message: str) -> None:
+        conn = self._get_work_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE election_backup_sheets
+                SET last_error = %s
+                WHERE election_id = %s
+                """,
+                (message, election_id),
+            )
+        conn.commit()
+
+    def _record_sync_success(self, election_id: str) -> None:
+        conn = self._get_work_conn()
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -310,6 +332,7 @@ class ElectionBackupSheetWorker:
         conn = self._get_work_conn()
         with conn.cursor() as cur:
             election = self.fetch_election(cur, election_id)
+        self._release_read_transaction(conn)
         if not election:
             return True
         return is_regression_harness_election(election.get("title"))
@@ -327,6 +350,7 @@ class ElectionBackupSheetWorker:
                 """
             )
             row = cur.fetchone()
+        self._release_read_transaction(conn)
         return bool(row and row["present"])
 
     @staticmethod

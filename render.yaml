@@ -24,7 +24,9 @@ services:
           name: bellezea-elections-db
           property: connectionString
       - key: AUTO_MIGRATE
-        value: "true"
+        value: "false"
+      - key: SCHEMA_LOCK_TIMEOUT
+        value: "30s"
       - key: CORS_ORIGINS
         value: "*"
       - key: OFFICER_EMAIL
