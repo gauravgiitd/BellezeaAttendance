@@ -363,14 +363,15 @@ DECLARE
   target_election_id uuid;
 BEGIN
   IF TG_TABLE_NAME = 'elections' THEN
+    IF TG_OP = 'INSERT' THEN
+      PERFORM pg_notify(
+        'election_backup_sync',
+        json_build_object('action', 'create', 'election_id', NEW.id)::text
+      );
+      RETURN NEW;
+    END IF;
     IF TG_OP = 'UPDATE' THEN
-      IF NEW.status = 'attendance_open' AND OLD.status IS DISTINCT FROM NEW.status THEN
-        PERFORM pg_notify(
-          'election_backup_sync',
-          json_build_object('action', 'create', 'election_id', NEW.id)::text
-        );
-      END IF;
-      IF NEW.status IN ('attendance_open', 'voting_open', 'voting_closed') THEN
+      IF NEW.status IN ('draft', 'attendance_open', 'voting_open', 'voting_closed') THEN
         PERFORM pg_notify(
           'election_backup_sync',
           json_build_object('action', 'sync', 'election_id', NEW.id)::text
@@ -396,7 +397,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_election_backup_sync_elections ON elections;
 CREATE TRIGGER trg_election_backup_sync_elections
-  AFTER UPDATE ON elections
+  AFTER INSERT OR UPDATE ON elections
   FOR EACH ROW
   EXECUTE PROCEDURE notify_election_backup_sync();
 

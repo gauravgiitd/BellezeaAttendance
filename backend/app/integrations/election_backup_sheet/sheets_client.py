@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -17,13 +18,13 @@ SERVICE_ACCOUNT_STORAGE_ERROR = (
     "scripts/authorize_google_drive_backup.py, or use a Google Workspace Shared Drive."
 )
 
+T = TypeVar("T")
+
 
 class ElectionBackupSheetsClient:
-    def __init__(self, drive_service: Any, sheets_service: Any, folder_id: str, http: Any | None = None) -> None:
-        self.drive = drive_service
-        self.sheets = sheets_service
+    def __init__(self, credentials: Any, folder_id: str) -> None:
+        self._credentials = credentials
         self.folder_id = folder_id
-        self._http = http
 
     @classmethod
     def from_env(cls) -> "ElectionBackupSheetsClient":
@@ -34,17 +35,19 @@ class ElectionBackupSheetsClient:
         credentials = load_drive_credentials()
         if has_oauth_credentials():
             verify_oauth_refresh(credentials)
-        import google_auth_httplib2
-        import httplib2
+        return cls(credentials, folder_id)
+
+    def _with_services(self, operation: Callable[[Any, Any], T]) -> T:
+        from google.auth.transport.requests import AuthorizedSession
         from googleapiclient.discovery import build
 
-        http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http())
-        drive_service = build("drive", "v3", http=http, cache_discovery=False)
-        sheets_service = build("sheets", "v4", http=http, cache_discovery=False)
-        return cls(drive_service, sheets_service, folder_id, http=http)
-
-    def release_http_connections(self) -> None:
-        release_httplib2_connections(self._http)
+        session = AuthorizedSession(self._credentials)
+        try:
+            drive = build("drive", "v3", http=session, cache_discovery=False)
+            sheets = build("sheets", "v4", http=session, cache_discovery=False)
+            return operation(drive, sheets)
+        finally:
+            session.close()
 
     def create_election_spreadsheet(self, title: str) -> dict[str, str]:
         metadata = {
@@ -52,10 +55,11 @@ class ElectionBackupSheetsClient:
             "mimeType": "application/vnd.google-apps.spreadsheet",
             "parents": [self.folder_id],
         }
-        try:
+
+        def create(drive: Any, sheets: Any) -> dict[str, str]:
             try:
                 created = (
-                    self.drive.files()
+                    drive.files()
                     .create(body=metadata, fields="id, webViewLink")
                     .execute()
                 )
@@ -63,9 +67,9 @@ class ElectionBackupSheetsClient:
                 raise translate_drive_create_error(exc) from exc
 
             spreadsheet_id = created["id"]
-            spreadsheet = self.sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            spreadsheet = sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
             default_sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
-            self.sheets.spreadsheets().batchUpdate(
+            sheets.spreadsheets().batchUpdate(
                 spreadsheetId=spreadsheet_id,
                 body={
                     "requests": [
@@ -85,8 +89,8 @@ class ElectionBackupSheetsClient:
                 "spreadsheet_id": spreadsheet_id,
                 "spreadsheet_url": created.get("webViewLink", ""),
             }
-        finally:
-            self.release_http_connections()
+
+        return self._with_services(create)
 
     def update_attendance_tab(
         self,
@@ -96,40 +100,26 @@ class ElectionBackupSheetsClient:
         rows: list[list[str]],
     ) -> None:
         values = [summary_row, headers, *rows]
-        try:
-            self.sheets.spreadsheets().values().clear(
+
+        def update(_drive: Any, sheets: Any) -> None:
+            sheets.spreadsheets().values().clear(
                 spreadsheetId=spreadsheet_id,
                 range=f"{ATTENDANCE_TAB_NAME}!A:ZZ",
             ).execute()
-            self.sheets.spreadsheets().values().update(
+            sheets.spreadsheets().values().update(
                 spreadsheetId=spreadsheet_id,
                 range=f"{ATTENDANCE_TAB_NAME}!A1",
                 valueInputOption="USER_ENTERED",
                 body={"values": values},
             ).execute()
-        finally:
-            self.release_http_connections()
+
+        self._with_services(update)
 
     def delete_spreadsheet(self, spreadsheet_id: str) -> None:
-        try:
-            self.drive.files().delete(fileId=spreadsheet_id).execute()
-        finally:
-            self.release_http_connections()
+        def delete(drive: Any, _sheets: Any) -> None:
+            drive.files().delete(fileId=spreadsheet_id).execute()
 
-
-def release_httplib2_connections(http: Any | None) -> None:
-    if http is None:
-        return
-    underlying = getattr(http, "http", http)
-    connections = getattr(underlying, "connections", None)
-    if not isinstance(connections, dict):
-        return
-    for connection in connections.values():
-        try:
-            connection.close()
-        except Exception:
-            pass
-    connections.clear()
+        self._with_services(delete)
 
 
 def oauth_client_credentials() -> tuple[str, str]:

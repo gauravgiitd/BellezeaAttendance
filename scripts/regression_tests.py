@@ -518,6 +518,22 @@ class RegressionHarness:
         assert direct_by_villa["Harness Villa A"][1:6] == ["Yes", "Harness Villa B", "", "Yes", ""]
         assert direct_by_villa["Harness Villa B"][1:6] == ["", "", "", "", "Yes"]
 
+        draft = self.create_election("backup sheet draft setup")
+        draft_id = draft["id"]
+        self.add_defaulter(draft_id, VILLA_C)
+        self.create_proxy(draft_id, VILLA_A)
+
+        with self.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM elections WHERE id = %s", (draft_id,))
+                draft_row = cur.fetchone()
+                _, _, draft_rows = build_attendance_sheet_rows(cur, draft_row)
+
+        draft_by_villa = {row[0]: row for row in draft_rows}
+        assert draft_by_villa["Harness Villa A"][1:4] == ["Yes", "Harness Villa B", ""]
+        assert draft_by_villa["Harness Villa C"][1:4] == ["", "", "Yes"]
+        assert draft_by_villa["Harness Villa A"][4:6] == ["", ""]
+
     def test_election_lifecycle_and_locks(self) -> None:
         voting_election = self.create_election("lifecycle locks", voting_enabled=True, quorum_percent="99")
         election_id = voting_election["id"]

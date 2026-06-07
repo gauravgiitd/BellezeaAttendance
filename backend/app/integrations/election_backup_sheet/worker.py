@@ -20,7 +20,7 @@ from backend.app.integrations.election_backup_sheet.sheets_client import (
 logger = logging.getLogger(__name__)
 
 NOTIFY_CHANNEL = "election_backup_sync"
-ACTIVE_ELECTION_STATUSES = ("attendance_open", "voting_open", "voting_closed")
+BACKUP_SHEET_STATUSES = ("draft", "attendance_open", "voting_open", "voting_closed")
 POLL_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_POLL_SECONDS", "30"))
 DEBOUNCE_SECONDS = float(os.environ.get("ELECTION_BACKUP_DEBOUNCE_SECONDS", "2"))
 BOOTSTRAP_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_BOOTSTRAP_SECONDS", "300"))
@@ -173,7 +173,7 @@ class ElectionBackupSheetWorker:
                   AND s.election_id IS NULL
                 ORDER BY e.created_at
                 """,
-                (list(ACTIVE_ELECTION_STATUSES),),
+                (list(BACKUP_SHEET_STATUSES),),
             )
             missing = [str(row["id"]) for row in cur.fetchall()]
 
@@ -201,7 +201,7 @@ class ElectionBackupSheetWorker:
             election = self.fetch_election(cur, election_id)
             if not election:
                 return
-            if election["status"] not in ACTIVE_ELECTION_STATUSES:
+            if election["status"] not in BACKUP_SHEET_STATUSES:
                 return
 
             title = self.spreadsheet_title(election)
@@ -232,7 +232,7 @@ class ElectionBackupSheetWorker:
             row = cur.fetchone()
             if not row:
                 return
-            if row["status"] not in ACTIVE_ELECTION_STATUSES:
+            if row["status"] not in BACKUP_SHEET_STATUSES:
                 return
 
             headers, summary_row, sheet_rows = build_attendance_sheet_rows(cur, row)
