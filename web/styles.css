@@ -1362,7 +1362,57 @@ select:focus {
   margin-top: 10px;
 }
 
-.proxy-row,
+.proxy-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--soft);
+}
+
+.proxy-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.proxy-table th,
+.proxy-table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.proxy-table th {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.proxy-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.proxy-table-actions {
+  width: 96px;
+  white-space: nowrap;
+}
+
+.proxy-party-cell strong {
+  display: block;
+}
+
+.proxy-party-cell small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .defaulter-row {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -1374,12 +1424,10 @@ select:focus {
   background: var(--soft);
 }
 
-.proxy-row strong,
 .defaulter-row strong {
   display: block;
 }
 
-.proxy-row small,
 .defaulter-row small {
   display: block;
   margin-top: 2px;
@@ -1645,7 +1693,6 @@ select:focus {
   .setup-metrics,
   .form-grid.two,
   .passing-rule-control,
-  .proxy-row,
   .defaulter-row,
   .choice-row,
   .result-choice {

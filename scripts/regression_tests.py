@@ -118,6 +118,7 @@ class RegressionHarness:
             self.test_attendance_marks_all_owners_and_is_idempotent,
             self.test_attendance_stage_rules_and_qr_validation,
             self.test_defaulter_exclusion_and_inclusion,
+            self.test_grantor_cannot_be_marked_directly_after_proxy_representation,
             self.test_proxy_management_and_reports,
             self.test_proxy_changes_during_attendance_reconcile_attendees,
             self.test_proxy_holder_can_be_any_owner_in_attending_villa,
@@ -439,7 +440,16 @@ class RegressionHarness:
         self.set_status(election_id, "attendance_open")
 
         self.mark_manual(election_id, VILLA_A, attendance_mode="Virtual")
-        self.mark_manual(election_id, VILLA_A, attendance_mode="Virtual")
+        self.expect_http_error(
+            409,
+            lambda: self.mark_manual(election_id, VILLA_A, attendance_mode="Virtual"),
+            "already been recorded",
+        )
+        self.expect_http_error(
+            409,
+            lambda: self.mark_manual(election_id, VILLA_A, attendance_mode="Physical"),
+            "already been recorded",
+        )
 
         row = self.dashboard_row(election_id, VILLA_A)
         assert row["counted"] is True
@@ -510,6 +520,31 @@ class RegressionHarness:
         assert self.api.attendance_dashboard(included_id)["representedVillas"] == 1
         rows = self.csv_rows(self.api.actual_attendee_report(included_id))
         assert [row["Name"] for row in rows] == ["Harness Owner C"]
+
+    def test_grantor_cannot_be_marked_directly_after_proxy_representation(self) -> None:
+        election = self.create_election("grantor direct blocked after proxy")
+        election_id = election["id"]
+        self.create_proxy(election_id, VILLA_A)
+        self.set_status(election_id, "attendance_open")
+        self.mark_manual(election_id, VILLA_B)
+
+        proxy_row = self.dashboard_row(election_id, VILLA_A, "proxy")
+        assert proxy_row["counted"] is True
+        assert proxy_row["isProxy"] is True
+
+        self.expect_http_error(
+            409,
+            lambda: self.mark_manual(election_id, VILLA_A),
+            "already been recorded",
+        )
+
+        dashboard = self.api.attendance_dashboard(election_id)
+        grantor_rows = [
+            row for row in dashboard["attendees"]
+            if row["house_id"] == VILLA_A
+        ]
+        assert len(grantor_rows) == 1
+        assert grantor_rows[0]["representationType"] == "proxy"
 
     def test_proxy_management_and_reports(self) -> None:
         election = self.create_election("proxy reports")

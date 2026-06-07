@@ -1319,19 +1319,48 @@ function renderProxyList() {
     proxyListElement.innerHTML = '<p class="empty-list">No proxies configured for this election.</p>';
     return;
   }
-  proxyListElement.innerHTML = scopedProxies.map((proxy) => `
-    <article class="proxy-row">
-      <div>
-        <strong>${escapeHtml(proxy.grantor_house_no || proxy.grantor_house_id)}</strong>
-        <small>${escapeHtml([
-          proxy.proxy_holder_name || proxy.proxy_holder_user_id,
-          proxy.proxy_holder_house_no,
-          proxy.proxy_holder_email,
-        ].filter(Boolean).join(' | '))}</small>
-      </div>
-      <button class="secondary small-button" type="button" data-delete-proxy="${escapeHtml(proxy.id)}" ${canEditProxies() ? '' : 'disabled'}>Delete</button>
-    </article>
-  `).join('');
+  proxyListElement.innerHTML = `
+    <div class="proxy-table-wrap">
+      <table class="proxy-table">
+        <thead>
+          <tr>
+            <th scope="col">Grantor</th>
+            <th scope="col">Proxy Holder</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${scopedProxies.map((proxy) => `
+            <tr>
+              <td>${proxyPartyCellHtml(proxy.grantor_house_no || proxy.grantor_house_id)}</td>
+              <td>${proxyPartyCellHtml(
+                proxy.proxy_holder_house_no || proxy.proxy_holder_house_id,
+                [
+                  proxy.proxy_holder_name || proxy.proxy_holder_user_id,
+                  proxy.proxy_holder_email,
+                ].filter(Boolean).join(' · ')
+              )}</td>
+              <td class="proxy-table-actions">
+                <button class="secondary small-button" type="button" data-delete-proxy="${escapeHtml(proxy.id)}" ${canEditProxies() ? '' : 'disabled'}>Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function proxyPartyCellHtml(primary, secondary = '') {
+  const secondaryHtml = secondary
+    ? `<small>${escapeHtml(secondary)}</small>`
+    : '';
+  return `
+    <div class="proxy-party-cell">
+      <strong>${escapeHtml(primary || '-')}</strong>
+      ${secondaryHtml}
+    </div>
+  `;
 }
 
 function renderDefaulterList() {

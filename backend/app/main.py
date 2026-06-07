@@ -1890,6 +1890,8 @@ def mark_attendance(
             if not is_owner(resident["user_type"]):
                 raise HTTPException(status_code=403, detail="Only owner-type residents can attend or vote")
 
+            ensure_villa_attendance_not_already_recorded(cur, election_id, resident["house_id"])
+
             attendance_rows = add_owner_attendance_records(
                 cur,
                 election_id=election_id,
@@ -2211,6 +2213,38 @@ def is_active_defaulter(cur, house_id: str, election_id: str) -> bool:
         (election_id, normalize_id(house_id)),
     )
     return bool(cur.fetchone())
+
+
+def villa_has_recorded_attendance(cur, election_id: str, house_id: str) -> bool:
+    normalized_house_id = normalize_id(house_id)
+    cur.execute(
+        """
+        SELECT 1
+        FROM villa_representations
+        WHERE election_id = %s
+          AND house_id = %s
+        LIMIT 1
+        """,
+        (election_id, normalized_house_id),
+    )
+    if cur.fetchone():
+        return True
+    cur.execute(
+        """
+        SELECT 1
+        FROM attendance_records
+        WHERE election_id = %s
+          AND house_id = %s
+        LIMIT 1
+        """,
+        (election_id, normalized_house_id),
+    )
+    return bool(cur.fetchone())
+
+
+def ensure_villa_attendance_not_already_recorded(cur, election_id: str, house_id: str) -> None:
+    if villa_has_recorded_attendance(cur, election_id, house_id):
+        raise HTTPException(status_code=409, detail="Attendance has already been recorded for this villa")
 
 
 def ensure_villa_can_vote(cur, election: dict[str, Any], house_id: str) -> None:
