@@ -3,10 +3,13 @@ import io
 import json
 import os
 import re
+import ssl
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
@@ -559,13 +562,55 @@ def sync_residents_from_google_sheet_browser(csv_url: str | None = None) -> dict
     return sync_residents_from_google_sheet_url(csv_url)
 
 
+def fetch_remote_text(url: str, timeout: int = 30) -> str:
+    try:
+        import certifi
+
+        context = ssl.create_default_context(cafile=certifi.where())
+        with urllib.request.urlopen(url, timeout=timeout, context=context) as response:
+            return response.read().decode("utf-8-sig")
+    except urllib.error.URLError as exc:
+        return fetch_remote_text_with_curl(url, timeout, exc)
+
+
+def fetch_remote_text_with_curl(url: str, timeout: int, original_error: urllib.error.URLError | None = None) -> str:
+    import shutil
+    import subprocess
+
+    if not shutil.which("curl"):
+        reason = original_error.reason if original_error and original_error.reason else str(original_error or "download failed")
+        raise HTTPException(status_code=502, detail=f"Could not download resident master CSV: {reason}") from original_error
+
+    result = subprocess.run(
+        ["curl", "-fsSL", "--max-time", str(timeout), url],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        detail = stderr or "curl failed to download resident master CSV"
+        raise HTTPException(status_code=502, detail=detail) from original_error
+    return result.stdout.decode("utf-8-sig")
+
+
 def sync_residents_from_google_sheet_url(csv_url: str | None = None) -> dict[str, int]:
     url = csv_url or os.environ.get("RESIDENT_MASTER_CSV_URL")
-    if not url:
-        raise HTTPException(status_code=400, detail="csv_url or RESIDENT_MASTER_CSV_URL is required")
-    with urllib.request.urlopen(url, timeout=30) as response:
-        text = response.read().decode("utf-8-sig")
-    return upsert_residents(csv_rows_from_text(text), source=url)
+    if url:
+        text = fetch_remote_text(url)
+        return upsert_residents(csv_rows_from_text(text), source=url)
+
+    local_path = os.environ.get("RESIDENT_MASTER_CSV_PATH")
+    if local_path:
+        path = Path(local_path).expanduser()
+        if not path.is_file():
+            raise HTTPException(status_code=400, detail=f"Resident master CSV file not found: {path}")
+        text = path.read_text(encoding="utf-8-sig")
+        return upsert_residents(csv_rows_from_text(text), source=str(path))
+
+    raise HTTPException(
+        status_code=400,
+        detail="csv_url, RESIDENT_MASTER_CSV_URL, or RESIDENT_MASTER_CSV_PATH is required",
+    )
 
 
 @app.get("/api/residents/sync-status", dependencies=[Depends(require_officer)])

@@ -8,8 +8,9 @@ from pathlib import Path
 
 
 MASTER_CSV = Path("/Users/gaurav.gupta/Downloads/resident_details.csv")
-LOOKUP_CSV = Path("/Users/gaurav.gupta/Downloads/resident_list_file_1779523827.csv_d25d15152f75926a7a9964d7cc30b19f.csv")
-OUTPUT_CSV = Path("/Users/gaurav.gupta/Code/Attendance/resident_details_with_ids.csv")
+LOOKUP_CSV = Path("/Users/gaurav.gupta/Downloads/resident_list_file_1780796778.csv_51f724a8d6a90d171d562489291c4a5b.csv")
+OUTPUT_CSV = Path("/Users/gaurav.gupta/Downloads/resident_details.csv")
+BACKUP_CSV = Path("/Users/gaurav.gupta/Downloads/resident_details.before_ids.csv")
 ACTIVE_ONLY_OUTPUT_CSV = Path("/Users/gaurav.gupta/Code/Attendance/resident_details_with_ids_active_only.csv")
 SUMMARY_CSV = Path("/Users/gaurav.gupta/Code/Attendance/resident_details_with_ids_match_summary.csv")
 
@@ -36,6 +37,15 @@ def normalize_flat(value):
     text = text.replace("&", " and ")
     text = re.sub(r"[^a-z0-9]+", " ", text)
     return clean_spaces(text)
+
+
+def normalize_user_type(value):
+    text = clean_spaces(value).casefold()
+    if text in {"owner", "owner family"}:
+        return "owner"
+    if text in {"tenant", "tenant family", "multi tenant"}:
+        return "tenant"
+    return text
 
 
 def flat_similarity(left, right):
@@ -68,7 +78,11 @@ def build_lookup(rows):
     by_name = defaultdict(list)
 
     for row in rows:
-        key = (normalize_flat(row.get("House No")), normalize_name(row.get("Resident Name")))
+        key = (
+            normalize_flat(row.get("House No")),
+            normalize_name(row.get("Resident Name")),
+            normalize_user_type(row.get("Resident Type")),
+        )
         by_exact_key[key].append(row)
         by_name[key[1]].append(row)
 
@@ -78,7 +92,8 @@ def build_lookup(rows):
 def select_match(master_row, by_exact_key, by_name):
     flat = master_row.get("Flat")
     name = master_row.get("Name")
-    exact_key = (normalize_flat(flat), normalize_name(name))
+    user_type = master_row.get("User Type")
+    exact_key = (normalize_flat(flat), normalize_name(name), normalize_user_type(user_type))
     exact_matches = by_exact_key.get(exact_key, [])
 
     if len(exact_matches) == 1:
@@ -87,25 +102,27 @@ def select_match(master_row, by_exact_key, by_name):
     if len(exact_matches) > 1:
         return None, "ambiguous_exact_normalized", 1.0
 
-    name_matches = by_name.get(exact_key[1], [])
-    if not name_matches:
-        return None, "no_name_match", 0.0
+    name_type_matches = [
+        candidate
+        for candidate in by_name.get(exact_key[1], [])
+        if normalize_user_type(candidate.get("Resident Type")) == exact_key[2]
+    ]
+    if len(name_type_matches) == 1:
+        return name_type_matches[0], "fuzzy_flat_same_name_and_type", flat_similarity(flat, name_type_matches[0].get("House No"))
 
-    scored = sorted(
-        ((flat_similarity(flat, candidate.get("House No")), candidate) for candidate in name_matches),
-        key=lambda item: item[0],
-        reverse=True,
-    )
-    best_score = scored[0][0]
-    best_matches = [candidate for score, candidate in scored if abs(score - best_score) < 0.00001]
+    if len(name_type_matches) > 1:
+        scored = sorted(
+            ((flat_similarity(flat, candidate.get("House No")), candidate) for candidate in name_type_matches),
+            key=lambda item: item[0],
+            reverse=True,
+        )
+        best_score = scored[0][0]
+        best_matches = [candidate for score, candidate in scored if abs(score - best_score) < 0.00001]
+        if best_score >= 0.82 and len(best_matches) == 1:
+            return best_matches[0], "fuzzy_flat_same_name_and_type", best_score
+        return None, "ambiguous_fuzzy_flat_same_name_and_type", best_score
 
-    if best_score >= 0.82 and len(best_matches) == 1:
-        return best_matches[0], "fuzzy_flat_same_name", best_score
-
-    if best_score >= 0.82:
-        return None, "ambiguous_fuzzy_flat_same_name", best_score
-
-    return None, "low_confidence_flat_match", best_score
+    return None, "no_name_and_type_match", 0.0
 
 
 def main():
@@ -135,6 +152,7 @@ def main():
         match_info = {
             "Flat": master_row.get("Flat", ""),
             "Name": master_row.get("Name", ""),
+            "User Type": master_row.get("User Type", ""),
             "Match Status": status,
             "Match Score": f"{score:.3f}",
             "Matched House No": match.get("House No", "") if match else "",
@@ -145,7 +163,11 @@ def main():
         match_infos.append(match_info)
 
         if status == "ambiguous_exact_normalized":
-            key = (normalize_flat(master_row.get("Flat")), normalize_name(master_row.get("Name")))
+            key = (
+                normalize_flat(master_row.get("Flat")),
+                normalize_name(master_row.get("Name")),
+                normalize_user_type(master_row.get("User Type")),
+            )
             ambiguous_groups[key].append((row_index, master_row))
 
     for key, indexed_master_rows in ambiguous_groups.items():
@@ -165,6 +187,11 @@ def main():
                 HOUSE_ID_COLUMN: candidate.get(HOUSE_ID_COLUMN, ""),
             })
 
+    import shutil
+
+    if MASTER_CSV.exists() and OUTPUT_CSV == MASTER_CSV:
+        shutil.copy2(MASTER_CSV, BACKUP_CSV)
+
     with OUTPUT_CSV.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=output_headers)
         writer.writeheader()
@@ -183,6 +210,7 @@ def main():
         fieldnames = [
             "Flat",
             "Name",
+            "User Type",
             "Match Status",
             "Match Score",
             "Matched House No",
@@ -207,6 +235,7 @@ def main():
     print(f"active_blank_id_rows={sum(1 for row in active_rows if not row[USER_ID_COLUMN] and not row[HOUSE_ID_COLUMN])}")
     for status in sorted(status_counts):
         print(f"{status}={status_counts[status]}")
+    print(f"backup_csv={BACKUP_CSV if BACKUP_CSV.exists() else 'not_created'}")
     print(f"output_csv={OUTPUT_CSV}")
     print(f"active_only_output_csv={ACTIVE_ONLY_OUTPUT_CSV}")
     print(f"summary_csv={SUMMARY_CSV}")

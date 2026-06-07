@@ -104,8 +104,18 @@ Before sharing the link widely:
 For local testing:
 
 ```bash
-python3 -m http.server 8080 --directory web
+cp .env.local.example .env.local
+./scripts/start_local_api.sh
+./scripts/start_local_web.sh
 ```
+
+Set `RESIDENT_MASTER_CSV_URL` in `.env.local` to the same Google Sheet CSV export URL used on Render. Keep it in quotes because the URL contains `&`:
+
+```bash
+RESIDENT_MASTER_CSV_URL="https://docs.google.com/spreadsheets/d/.../export?format=csv&gid=..."
+```
+
+`scripts/start_local_api.sh` loads `.env.local` automatically. Then use **Sync Resident Master** in the officer console the same way as on Render.
 
 Then open:
 
