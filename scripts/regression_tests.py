@@ -501,6 +501,23 @@ class RegressionHarness:
         assert included_by_villa["Harness Villa C"][1:6] == ["", "", "Yes", "Yes", ""]
         assert included_summary[0] == f"=COUNTA(A{DATA_START_ROW}:A{included_last_row})"
 
+        direct_grantor = self.create_election("backup sheet grantor direct with proxy")
+        direct_id = direct_grantor["id"]
+        self.set_status(direct_id, "attendance_open")
+        self.mark_manual(direct_id, VILLA_A, attendance_mode="Physical")
+        self.create_proxy(direct_id, VILLA_A)
+        self.mark_manual(direct_id, VILLA_B, attendance_mode="Virtual")
+
+        with self.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM elections WHERE id = %s", (direct_id,))
+                direct_row = cur.fetchone()
+                _, _, direct_rows = build_attendance_sheet_rows(cur, direct_row)
+
+        direct_by_villa = {row[0]: row for row in direct_rows}
+        assert direct_by_villa["Harness Villa A"][1:6] == ["Yes", "Harness Villa B", "", "Yes", ""]
+        assert direct_by_villa["Harness Villa B"][1:6] == ["", "", "", "", "Yes"]
+
     def test_election_lifecycle_and_locks(self) -> None:
         voting_election = self.create_election("lifecycle locks", voting_enabled=True, quorum_percent="99")
         election_id = voting_election["id"]

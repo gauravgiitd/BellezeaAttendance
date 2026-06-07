@@ -19,10 +19,11 @@ SERVICE_ACCOUNT_STORAGE_ERROR = (
 
 
 class ElectionBackupSheetsClient:
-    def __init__(self, drive_service: Any, sheets_service: Any, folder_id: str) -> None:
+    def __init__(self, drive_service: Any, sheets_service: Any, folder_id: str, http: Any | None = None) -> None:
         self.drive = drive_service
         self.sheets = sheets_service
         self.folder_id = folder_id
+        self._http = http
 
     @classmethod
     def from_env(cls) -> "ElectionBackupSheetsClient":
@@ -33,11 +34,17 @@ class ElectionBackupSheetsClient:
         credentials = load_drive_credentials()
         if has_oauth_credentials():
             verify_oauth_refresh(credentials)
+        import google_auth_httplib2
+        import httplib2
         from googleapiclient.discovery import build
 
-        drive_service = build("drive", "v3", credentials=credentials, cache_discovery=False)
-        sheets_service = build("sheets", "v4", credentials=credentials, cache_discovery=False)
-        return cls(drive_service, sheets_service, folder_id)
+        http = google_auth_httplib2.AuthorizedHttp(credentials, http=httplib2.Http())
+        drive_service = build("drive", "v3", http=http, cache_discovery=False)
+        sheets_service = build("sheets", "v4", http=http, cache_discovery=False)
+        return cls(drive_service, sheets_service, folder_id, http=http)
+
+    def release_http_connections(self) -> None:
+        release_httplib2_connections(self._http)
 
     def create_election_spreadsheet(self, title: str) -> dict[str, str]:
         metadata = {
@@ -46,37 +53,40 @@ class ElectionBackupSheetsClient:
             "parents": [self.folder_id],
         }
         try:
-            created = (
-                self.drive.files()
-                .create(body=metadata, fields="id, webViewLink")
-                .execute()
-            )
-        except Exception as exc:
-            raise translate_drive_create_error(exc) from exc
+            try:
+                created = (
+                    self.drive.files()
+                    .create(body=metadata, fields="id, webViewLink")
+                    .execute()
+                )
+            except Exception as exc:
+                raise translate_drive_create_error(exc) from exc
 
-        spreadsheet_id = created["id"]
-        spreadsheet = self.sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
-        default_sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
-        self.sheets.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id,
-            body={
-                "requests": [
-                    {
-                        "updateSheetProperties": {
-                            "properties": {
-                                "sheetId": default_sheet_id,
-                                "title": ATTENDANCE_TAB_NAME,
-                            },
-                            "fields": "title",
+            spreadsheet_id = created["id"]
+            spreadsheet = self.sheets.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            default_sheet_id = spreadsheet["sheets"][0]["properties"]["sheetId"]
+            self.sheets.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "requests": [
+                        {
+                            "updateSheetProperties": {
+                                "properties": {
+                                    "sheetId": default_sheet_id,
+                                    "title": ATTENDANCE_TAB_NAME,
+                                },
+                                "fields": "title",
+                            }
                         }
-                    }
-                ]
-            },
-        ).execute()
-        return {
-            "spreadsheet_id": spreadsheet_id,
-            "spreadsheet_url": created.get("webViewLink", ""),
-        }
+                    ]
+                },
+            ).execute()
+            return {
+                "spreadsheet_id": spreadsheet_id,
+                "spreadsheet_url": created.get("webViewLink", ""),
+            }
+        finally:
+            self.release_http_connections()
 
     def update_attendance_tab(
         self,
@@ -86,19 +96,40 @@ class ElectionBackupSheetsClient:
         rows: list[list[str]],
     ) -> None:
         values = [summary_row, headers, *rows]
-        self.sheets.spreadsheets().values().clear(
-            spreadsheetId=spreadsheet_id,
-            range=f"{ATTENDANCE_TAB_NAME}!A:ZZ",
-        ).execute()
-        self.sheets.spreadsheets().values().update(
-            spreadsheetId=spreadsheet_id,
-            range=f"{ATTENDANCE_TAB_NAME}!A1",
-            valueInputOption="USER_ENTERED",
-            body={"values": values},
-        ).execute()
+        try:
+            self.sheets.spreadsheets().values().clear(
+                spreadsheetId=spreadsheet_id,
+                range=f"{ATTENDANCE_TAB_NAME}!A:ZZ",
+            ).execute()
+            self.sheets.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=f"{ATTENDANCE_TAB_NAME}!A1",
+                valueInputOption="USER_ENTERED",
+                body={"values": values},
+            ).execute()
+        finally:
+            self.release_http_connections()
 
     def delete_spreadsheet(self, spreadsheet_id: str) -> None:
-        self.drive.files().delete(fileId=spreadsheet_id).execute()
+        try:
+            self.drive.files().delete(fileId=spreadsheet_id).execute()
+        finally:
+            self.release_http_connections()
+
+
+def release_httplib2_connections(http: Any | None) -> None:
+    if http is None:
+        return
+    underlying = getattr(http, "http", http)
+    connections = getattr(underlying, "connections", None)
+    if not isinstance(connections, dict):
+        return
+    for connection in connections.values():
+        try:
+            connection.close()
+        except Exception:
+            pass
+    connections.clear()
 
 
 def oauth_client_credentials() -> tuple[str, str]:

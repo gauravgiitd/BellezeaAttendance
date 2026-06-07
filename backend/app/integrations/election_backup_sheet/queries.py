@@ -78,6 +78,21 @@ def attended_row_formula(row_number: int, mode_count: int) -> str:
     return f'=IF(OR({checks}),"Yes","")'
 
 
+def resolve_proxy_attendance(
+    grantor_house_id: str,
+    proxy: dict[str, Any],
+    attendance_mode_by_house: dict[str, str],
+    defaulter_house_ids: set[str],
+) -> tuple[str | None, bool]:
+    grantor_attended_mode = attendance_mode_by_house.get(grantor_house_id)
+    if grantor_attended_mode:
+        return grantor_attended_mode, grantor_house_id in defaulter_house_ids
+
+    holder_house_id = proxy["proxy_holder_house_id"]
+    holder_attended_mode = attendance_mode_by_house.get(holder_house_id)
+    return holder_attended_mode, holder_house_id in defaulter_house_ids
+
+
 def build_summary_row(
     villa_count: int,
     mode_count: int,
@@ -176,15 +191,17 @@ def build_attendance_sheet_rows(
         if proxy:
             proxy_label = "Yes"
             proxy_villa = proxy["proxy_holder_house_no"]
-            attendance_house_id = proxy["proxy_holder_house_id"]
-            mode_defaulter = proxy["proxy_holder_house_id"] in defaulter_house_ids
+            attended_mode, mode_defaulter = resolve_proxy_attendance(
+                house_id,
+                proxy,
+                attendance_mode_by_house,
+                defaulter_house_ids,
+            )
         else:
             proxy_label = ""
             proxy_villa = ""
-            attendance_house_id = house_id
+            attended_mode = attendance_mode_by_house.get(house_id)
             mode_defaulter = house_id in defaulter_house_ids
-
-        attended_mode = attendance_mode_by_house.get(attendance_house_id)
         defaulter_label = "Yes" if house_id in defaulter_house_ids else ""
         sheet_row_number = DATA_START_ROW + row_index
         row = [
