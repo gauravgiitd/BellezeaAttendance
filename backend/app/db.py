@@ -1,11 +1,15 @@
+import logging
 import os
 import re
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
+
+logger = logging.getLogger(__name__)
 
 _LOCK_TIMEOUT_PATTERN = re.compile(r"^\d+(?:ms|s|min|h|d)?$", re.IGNORECASE)
 
@@ -42,11 +46,50 @@ def connection():
         yield conn
 
 
-def initialize_schema() -> None:
+def initialize_schema(
+    *,
+    skip_on_lock_timeout: bool | None = None,
+    max_attempts: int | None = None,
+    retry_delay_seconds: float | None = None,
+) -> bool:
+    if skip_on_lock_timeout is None:
+        skip_on_lock_timeout = os.environ.get(
+            "SCHEMA_MIGRATE_SKIP_ON_LOCK_TIMEOUT", ""
+        ).lower() in {"1", "true", "yes"}
+    if max_attempts is None:
+        max_attempts = max(1, int(os.environ.get("SCHEMA_MIGRATE_MAX_ATTEMPTS", "3")))
+    if retry_delay_seconds is None:
+        retry_delay_seconds = float(os.environ.get("SCHEMA_MIGRATE_RETRY_SECONDS", "15"))
+
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     lock_timeout = _schema_lock_timeout()
-    with connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(sql.SQL("SET lock_timeout TO {}").format(sql.Literal(lock_timeout)))
-            cur.execute(schema_sql)
-        conn.commit()
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(sql.SQL("SET lock_timeout TO {}").format(sql.Literal(lock_timeout)))
+                    cur.execute(schema_sql)
+                conn.commit()
+            if attempt > 1:
+                logger.info("Schema migration succeeded on attempt %s", attempt)
+            return True
+        except psycopg.errors.LockNotAvailable:
+            logger.warning(
+                "Schema migration lock timeout on attempt %s/%s",
+                attempt,
+                max_attempts,
+            )
+            if attempt < max_attempts:
+                time.sleep(retry_delay_seconds)
+                continue
+            if skip_on_lock_timeout:
+                logger.warning(
+                    "Skipping schema migration after %s attempts due to lock timeout. "
+                    "Run /api/admin/migrate when database traffic is quiet.",
+                    max_attempts,
+                )
+                return False
+            raise
+
+    return False

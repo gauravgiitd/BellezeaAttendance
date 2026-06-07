@@ -602,7 +602,11 @@ def officer_me(officer: dict[str, Any] = Depends(require_officer)) -> dict[str, 
 
 @app.post("/api/admin/migrate", dependencies=[Depends(require_officer)])
 def migrate() -> dict[str, str]:
-    initialize_schema()
+    if not initialize_schema(skip_on_lock_timeout=False):
+        raise HTTPException(
+            status_code=503,
+            detail="Schema migration could not acquire database locks. Retry when traffic is quiet.",
+        )
     return {"status": "migrated"}
 
 
