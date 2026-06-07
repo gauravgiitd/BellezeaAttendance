@@ -192,7 +192,7 @@ class ElectionBackupSheetWorker:
                 LEFT JOIN election_backup_sheets s ON s.election_id = e.id
                 WHERE e.status = ANY(%s)
                   AND s.election_id IS NULL
-                  AND e.title NOT LIKE 'Regression Harness:%'
+                  AND e.title NOT LIKE 'Regression Harness:%%'
                 ORDER BY e.created_at
                 """,
                 (list(BACKUP_SHEET_STATUSES),),
@@ -322,7 +322,7 @@ class ElectionBackupSheetWorker:
                 SELECT EXISTS (
                   SELECT 1
                   FROM elections
-                  WHERE title LIKE 'Regression Harness:%'
+                  WHERE title LIKE 'Regression Harness:%%'
                 ) AS present
                 """
             )
