@@ -392,15 +392,29 @@ class RegressionHarness:
                     """,
                     (stale_user_id, stale_house_id, "888001", "Harness Stale Resident", "Owner", "Active"),
                 )
-                cleanup = self.api.cleanup_residents_after_import(cur, [OWNER_A1], [VILLA_A])
+                cur.execute(
+                    """
+                    SELECT user_id, house_id
+                    FROM residents
+                    WHERE NOT (user_id = %s AND house_id = %s)
+                    """,
+                    (stale_user_id, stale_house_id),
+                )
+                keep_rows = cur.fetchall()
+                imported_user_ids = [row["user_id"] for row in keep_rows]
+                imported_house_ids = [row["house_id"] for row in keep_rows]
+
+                cleanup = self.api.cleanup_residents_after_import(
+                    cur, imported_user_ids, imported_house_ids
+                )
                 cur.execute("SELECT 1 FROM residents WHERE user_id = %s AND house_id = %s", (stale_user_id, stale_house_id))
                 assert cur.fetchone() is None
                 cur.execute("SELECT 1 FROM villas WHERE house_id = %s", (stale_house_id,))
                 assert cur.fetchone() is None
                 cur.execute("SELECT 1 FROM residents WHERE user_id = %s AND house_id = %s", (OWNER_A1, VILLA_A))
                 assert cur.fetchone() is not None
-                assert cleanup["removed_residents"] >= 1
-                assert cleanup["removed_villas"] >= 1
+                assert cleanup["removed_residents"] == 1
+                assert cleanup["removed_villas"] == 1
             conn.rollback()
 
     def test_election_backup_sheet_rows(self) -> None:
