@@ -543,7 +543,7 @@ async function syncResidentsFromMaster() {
     await loadResidentDirectory();
     setManageStatus(
       'success',
-      `Resident Master synced. Imported ${formatInt(result.imported)} rows; skipped ${formatInt(result.skipped)} rows.`
+      `Resident Master synced. Imported ${formatInt(result.imported)} rows; skipped ${formatInt(result.skipped)} rows; removed ${formatInt(result.removed_residents || 0)} residents and ${formatInt(result.removed_villas || 0)} villas no longer in the sheet.`
     );
   } catch (error) {
     setManageStatus('error', error.message || 'Could not sync Resident Master.');

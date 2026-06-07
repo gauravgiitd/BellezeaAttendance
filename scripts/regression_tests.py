@@ -114,6 +114,7 @@ class RegressionHarness:
 
         tests: list[Callable[[], None]] = [
             self.test_resident_directory_and_qr_rules,
+            self.test_resident_sync_cleanup,
             self.test_election_lifecycle_and_locks,
             self.test_attendance_marks_all_owners_and_is_idempotent,
             self.test_attendance_stage_rules_and_qr_validation,
@@ -363,6 +364,43 @@ class RegressionHarness:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) AS count FROM residents WHERE user_id = %s", (OWNER_A1,))
                 assert int(cur.fetchone()["count"]) == 2
+
+    def test_resident_sync_cleanup(self) -> None:
+        stale_house_id = "888888"
+        stale_user_id = "888001"
+        with self.connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO villas (house_id, house_no, updated_at)
+                    VALUES (%s, %s, now())
+                    ON CONFLICT (house_id) DO UPDATE SET house_no = EXCLUDED.house_no, updated_at = now()
+                    """,
+                    (stale_house_id, "Harness Stale Villa"),
+                )
+                cur.execute(
+                    """
+                    INSERT INTO residents (
+                      user_id, house_id, passcode, name, user_type, status,
+                      mobile_no, email, raw_payload, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, '', '', '{}'::jsonb, now())
+                    ON CONFLICT (user_id, house_id) DO UPDATE SET
+                      name = EXCLUDED.name,
+                      updated_at = now()
+                    """,
+                    (stale_user_id, stale_house_id, "888001", "Harness Stale Resident", "Owner", "Active"),
+                )
+                cleanup = self.api.cleanup_residents_after_import(cur, [OWNER_A1], [VILLA_A])
+                cur.execute("SELECT 1 FROM residents WHERE user_id = %s AND house_id = %s", (stale_user_id, stale_house_id))
+                assert cur.fetchone() is None
+                cur.execute("SELECT 1 FROM villas WHERE house_id = %s", (stale_house_id,))
+                assert cur.fetchone() is None
+                cur.execute("SELECT 1 FROM residents WHERE user_id = %s AND house_id = %s", (OWNER_A1, VILLA_A))
+                assert cur.fetchone() is not None
+                assert cleanup["removed_residents"] >= 1
+                assert cleanup["removed_villas"] >= 1
+            conn.rollback()
 
     def test_election_lifecycle_and_locks(self) -> None:
         voting_election = self.create_election("lifecycle locks", voting_enabled=True, quorum_percent="99")

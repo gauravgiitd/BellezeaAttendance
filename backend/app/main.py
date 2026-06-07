@@ -281,6 +281,8 @@ def resident_from_row(row: dict[str, str]) -> dict[str, str]:
 def upsert_residents(rows: list[dict[str, str]], source: str) -> dict[str, int]:
     imported = 0
     skipped = 0
+    imported_user_ids: list[str] = []
+    imported_house_ids: list[str] = []
     with connection() as conn:
         with conn.cursor() as cur:
             for row in rows:
@@ -333,15 +335,63 @@ def upsert_residents(rows: list[dict[str, str]], source: str) -> dict[str, int]:
                     ),
                 )
                 imported += 1
+                imported_user_ids.append(resident["user_id"])
+                imported_house_ids.append(resident["house_id"])
+
+            cleanup = cleanup_residents_after_import(cur, imported_user_ids, imported_house_ids)
             cur.execute(
                 """
                 INSERT INTO resident_source_syncs (source, row_count, metadata)
                 VALUES (%s, %s, %s::jsonb)
                 """,
-                (source, imported, psycopg_json({"skipped": skipped})),
+                (
+                    source,
+                    imported,
+                    psycopg_json({"skipped": skipped, **cleanup}),
+                ),
             )
         conn.commit()
-    return {"imported": imported, "skipped": skipped}
+    return {"imported": imported, "skipped": skipped, **cleanup}
+
+
+def cleanup_residents_after_import(
+    cur,
+    imported_user_ids: list[str],
+    imported_resident_house_ids: list[str],
+) -> dict[str, int]:
+    if not imported_user_ids:
+        return {"removed_residents": 0, "removed_villas": 0}
+
+    imported_house_id_list = sorted(set(imported_resident_house_ids))
+    cur.execute(
+        """
+        DELETE FROM residents r
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM unnest(%s::text[], %s::text[]) AS i(user_id, house_id)
+            WHERE i.user_id = r.user_id
+              AND i.house_id = r.house_id
+        )
+        """,
+        (imported_user_ids, imported_resident_house_ids),
+    )
+    removed_residents = cur.rowcount
+
+    cur.execute(
+        """
+        DELETE FROM villas v
+        WHERE v.house_id <> ALL(%s)
+          AND NOT EXISTS (SELECT 1 FROM residents r WHERE r.house_id = v.house_id)
+          AND NOT EXISTS (SELECT 1 FROM attendance_records ar WHERE ar.house_id = v.house_id)
+          AND NOT EXISTS (SELECT 1 FROM villa_representations vr WHERE vr.house_id = v.house_id)
+          AND NOT EXISTS (SELECT 1 FROM ballots b WHERE b.house_id = v.house_id)
+          AND NOT EXISTS (SELECT 1 FROM proxies p WHERE p.grantor_house_id = v.house_id OR p.proxy_holder_house_id = v.house_id)
+          AND NOT EXISTS (SELECT 1 FROM defaulters d WHERE d.house_id = v.house_id)
+        """,
+        (imported_house_id_list,),
+    )
+    removed_villas = cur.rowcount
+    return {"removed_residents": removed_residents, "removed_villas": removed_villas}
 
 
 def psycopg_json(value: Any) -> str:
