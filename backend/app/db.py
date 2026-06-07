@@ -48,14 +48,10 @@ def connection():
 
 def initialize_schema(
     *,
-    skip_on_lock_timeout: bool | None = None,
+    skip_on_lock_timeout: bool = True,
     max_attempts: int | None = None,
     retry_delay_seconds: float | None = None,
 ) -> bool:
-    if skip_on_lock_timeout is None:
-        skip_on_lock_timeout = os.environ.get(
-            "SCHEMA_MIGRATE_SKIP_ON_LOCK_TIMEOUT", ""
-        ).lower() in {"1", "true", "yes"}
     if max_attempts is None:
         max_attempts = max(1, int(os.environ.get("SCHEMA_MIGRATE_MAX_ATTEMPTS", "3")))
     if retry_delay_seconds is None:

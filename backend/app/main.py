@@ -568,7 +568,7 @@ def ensure_status_transition_allowed(cur, election_id: str, next_status: str) ->
 @app.on_event("startup")
 def on_startup() -> None:
     if os.environ.get("AUTO_MIGRATE", "true").lower() not in {"0", "false", "no"}:
-        initialize_schema()
+        initialize_schema(skip_on_lock_timeout=False)
     start_election_backup_worker()
 
 

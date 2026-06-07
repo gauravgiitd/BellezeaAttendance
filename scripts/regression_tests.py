@@ -120,7 +120,7 @@ class RegressionHarness:
 
         if not should_skip_schema():
             os.environ.pop("REGRESSION_HARNESS_ACTIVE", None)
-            self.initialize_schema()
+            self.initialize_schema(skip_on_lock_timeout=False)
             os.environ["REGRESSION_HARNESS_ACTIVE"] = "true"
         set_backup_sync_paused(True)
         tests: list[Callable[[], None]] = [
