@@ -115,6 +115,9 @@ class ElectionBackupSheetWorker:
         if not election_id:
             return
 
+        if self._should_ignore_election(str(election_id)):
+            return
+
         election_key = str(election_id)
         if action == "create":
             self.pending_actions[f"create:{election_key}"] = time.monotonic()
@@ -130,6 +133,8 @@ class ElectionBackupSheetWorker:
                 self.pending_actions[key] = self._failure_backoff_until[election_id]
                 continue
             try:
+                if self._should_ignore_election(election_id):
+                    continue
                 if action == "create":
                     self.ensure_spreadsheet(election_id)
                 self.sync_spreadsheet(election_id)
@@ -281,6 +286,14 @@ class ElectionBackupSheetWorker:
     def fetch_election(self, cur, election_id: str) -> dict[str, Any] | None:
         cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
         return cur.fetchone()
+
+    def _should_ignore_election(self, election_id: str) -> bool:
+        conn = self._get_work_conn()
+        with conn.cursor() as cur:
+            election = self.fetch_election(cur, election_id)
+        if not election:
+            return True
+        return is_regression_harness_election(election.get("title"))
 
     @staticmethod
     def spreadsheet_title(election: dict[str, Any]) -> str:

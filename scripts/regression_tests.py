@@ -74,6 +74,11 @@ def configure_environment(database_url: str) -> None:
     os.environ["DATABASE_URL"] = database_url
     os.environ["OFFICER_AUTH_DISABLED"] = "true"
     os.environ["AUTO_MIGRATE"] = "false"
+    os.environ["ELECTION_BACKUP_SHEET_WORKER_ENABLED"] = "false"
+
+
+def should_skip_schema() -> bool:
+    return os.environ.get("REGRESSION_SKIP_SCHEMA", "").lower() in {"1", "true", "yes"}
 
 
 def import_api():
@@ -81,6 +86,24 @@ def import_api():
     from backend.app.db import connection, initialize_schema
 
     return api, connection, initialize_schema
+
+
+def patch_regression_connection(api: Any, base_connection: Any):
+    from contextlib import contextmanager
+
+    @contextmanager
+    def regression_connection():
+        with base_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET app.regression_harness_active = 'true'")
+                cur.execute("SET lock_timeout = '10s'")
+            yield conn
+
+    import backend.app.db as db_module
+
+    db_module.connection = regression_connection
+    api.connection = regression_connection
+    return regression_connection
 
 
 @dataclass
@@ -106,11 +129,14 @@ def question_choices(api: Any, choices: tuple[str, ...] = DEFAULT_CHOICES, with_
 
 class RegressionHarness:
     def __init__(self, keep_data: bool = False) -> None:
-        self.api, self.connection, self.initialize_schema = import_api()
+        self.api, self._base_connection, self.initialize_schema = import_api()
+        self.connection = self._base_connection
         self.keep_data = keep_data
 
     def run(self) -> int:
-        self.initialize_schema()
+        if not should_skip_schema():
+            self.initialize_schema()
+        self.connection = patch_regression_connection(self.api, self._base_connection)
         self.cleanup_all()
         self.seed_residents()
 
@@ -425,6 +451,8 @@ class RegressionHarness:
             build_attendance_sheet_rows,
         )
 
+        harness_house_ids = set(TEST_HOUSE_IDS)
+
         election = self.create_election("backup sheet rows")
         election_id = election["id"]
         self.add_defaulter(election_id, VILLA_C)
@@ -437,7 +465,9 @@ class RegressionHarness:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
                 election_row = cur.fetchone()
-                headers, summary_row, rows = build_attendance_sheet_rows(cur, election_row)
+                headers, summary_row, rows = build_attendance_sheet_rows(
+                    cur, election_row, house_ids=harness_house_ids
+                )
 
         assert headers == [
             "Villa #",
@@ -495,7 +525,9 @@ class RegressionHarness:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM elections WHERE id = %s", (included_id,))
                 included_row = cur.fetchone()
-                _, included_summary, included_rows = build_attendance_sheet_rows(cur, included_row)
+                _, included_summary, included_rows = build_attendance_sheet_rows(
+                    cur, included_row, house_ids=harness_house_ids
+                )
 
         included_last_row = DATA_START_ROW + len(included_rows) - 1
         assert included_summary[7] == "=IF(A1=0,0,G1/A1*100)"
@@ -514,7 +546,9 @@ class RegressionHarness:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM elections WHERE id = %s", (direct_id,))
                 direct_row = cur.fetchone()
-                _, _, direct_rows = build_attendance_sheet_rows(cur, direct_row)
+                _, _, direct_rows = build_attendance_sheet_rows(
+                    cur, direct_row, house_ids=harness_house_ids
+                )
 
         direct_by_villa = {row[0]: row for row in direct_rows}
         assert direct_by_villa["Harness Villa A"][1:6] == ["Yes", "Harness Villa B", "", "Yes", ""]
@@ -529,7 +563,9 @@ class RegressionHarness:
             with conn.cursor() as cur:
                 cur.execute("SELECT * FROM elections WHERE id = %s", (draft_id,))
                 draft_row = cur.fetchone()
-                _, _, draft_rows = build_attendance_sheet_rows(cur, draft_row)
+                _, _, draft_rows = build_attendance_sheet_rows(
+                    cur, draft_row, house_ids=harness_house_ids
+                )
 
         draft_by_villa = {row[0]: row for row in draft_rows}
         assert draft_by_villa["Harness Villa A"][1:4] == ["Yes", "Harness Villa B", ""]

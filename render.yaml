@@ -16,7 +16,7 @@ services:
     name: bellezea-elections-api
     runtime: python
     buildCommand: "pip install -r backend/requirements.txt"
-    preDeployCommand: "ELECTION_BACKUP_SHEET_WORKER_ENABLED=false python scripts/regression_tests.py"
+    preDeployCommand: "python -c \"from backend.app.db import initialize_schema; initialize_schema()\" && REGRESSION_SKIP_SCHEMA=true ELECTION_BACKUP_SHEET_WORKER_ENABLED=false python scripts/regression_tests.py"
     startCommand: "uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: DATABASE_URL

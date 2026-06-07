@@ -125,6 +125,8 @@ def build_summary_row(
 def build_attendance_sheet_rows(
     cur,
     election: dict[str, Any],
+    *,
+    house_ids: set[str] | None = None,
 ) -> tuple[list[str], list[str], list[list[str]]]:
     election_id = str(election["id"])
     include_defaulters_in_quorum = bool(election.get("include_defaulters_in_quorum"))
@@ -132,13 +134,24 @@ def build_attendance_sheet_rows(
     headers = attendance_sheet_headers(attendance_modes)
     mode_count = len(attendance_modes)
 
-    cur.execute(
-        """
-        SELECT house_id, house_no
-        FROM villas
-        ORDER BY house_no
-        """
-    )
+    if house_ids:
+        cur.execute(
+            """
+            SELECT house_id, house_no
+            FROM villas
+            WHERE house_id = ANY(%s)
+            ORDER BY house_no
+            """,
+            (sorted(house_ids),),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT house_id, house_no
+            FROM villas
+            ORDER BY house_no
+            """
+        )
     villas = cur.fetchall()
 
     cur.execute(
