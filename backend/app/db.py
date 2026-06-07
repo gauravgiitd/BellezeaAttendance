@@ -1,9 +1,13 @@
 import os
+import re
 from contextlib import contextmanager
 from pathlib import Path
 
 import psycopg
+from psycopg import sql
 from psycopg.rows import dict_row
+
+_LOCK_TIMEOUT_PATTERN = re.compile(r"^\d+(?:ms|s|min|h|d)?$", re.IGNORECASE)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +19,13 @@ def database_url() -> str:
     if not url:
         raise RuntimeError("DATABASE_URL is not configured")
     return url
+
+
+def _schema_lock_timeout() -> str:
+    configured = os.environ.get("SCHEMA_LOCK_TIMEOUT", "30s").strip()
+    if _LOCK_TIMEOUT_PATTERN.fullmatch(configured):
+        return configured
+    return "30s"
 
 
 def _apply_session_settings(conn: psycopg.Connection) -> None:
@@ -33,9 +44,9 @@ def connection():
 
 def initialize_schema() -> None:
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-    lock_timeout = os.environ.get("SCHEMA_LOCK_TIMEOUT", "30s")
+    lock_timeout = _schema_lock_timeout()
     with connection() as conn:
         with conn.cursor() as cur:
-            cur.execute("SET lock_timeout = %s", (lock_timeout,))
+            cur.execute(sql.SQL("SET lock_timeout TO {}").format(sql.Literal(lock_timeout)))
             cur.execute(schema_sql)
         conn.commit()
