@@ -48,14 +48,14 @@ def connection():
 
 def initialize_schema(
     *,
-    skip_on_lock_timeout: bool = True,
+    skip_on_lock_timeout: bool = False,
     max_attempts: int | None = None,
     retry_delay_seconds: float | None = None,
 ) -> bool:
     if max_attempts is None:
-        max_attempts = max(1, int(os.environ.get("SCHEMA_MIGRATE_MAX_ATTEMPTS", "3")))
+        max_attempts = max(1, int(os.environ.get("SCHEMA_MIGRATE_MAX_ATTEMPTS", "1")))
     if retry_delay_seconds is None:
-        retry_delay_seconds = float(os.environ.get("SCHEMA_MIGRATE_RETRY_SECONDS", "15"))
+        retry_delay_seconds = float(os.environ.get("SCHEMA_MIGRATE_RETRY_SECONDS", "5"))
 
     schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
     lock_timeout = _schema_lock_timeout()
