@@ -43,16 +43,17 @@ class ElectionBackupSheetsClient:
         return cls(credentials, folder_id)
 
     def _with_services(self, operation: Callable[[Any, Any], T]) -> T:
-        from google.auth.transport.requests import AuthorizedSession
+        import google_auth_httplib2
+        import httplib2
         from googleapiclient.discovery import build
 
-        session = AuthorizedSession(self._credentials)
+        http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=httplib2.Http())
         try:
-            drive = build("drive", "v3", http=session, cache_discovery=False)
-            sheets = build("sheets", "v4", http=session, cache_discovery=False)
+            drive = build("drive", "v3", http=http, cache_discovery=False)
+            sheets = build("sheets", "v4", http=http, cache_discovery=False)
             return operation(drive, sheets)
         finally:
-            session.close()
+            release_httplib2_connections(http)
 
     def create_election_spreadsheet(self, title: str) -> dict[str, str]:
         if is_regression_harness_election(title) or REGRESSION_HARNESS_TITLE_PREFIX in title:
@@ -128,6 +129,21 @@ class ElectionBackupSheetsClient:
             drive.files().delete(fileId=spreadsheet_id).execute()
 
         self._with_services(delete)
+
+
+def release_httplib2_connections(http: Any | None) -> None:
+    if http is None:
+        return
+    underlying = getattr(http, "http", http)
+    connections = getattr(underlying, "connections", None)
+    if not isinstance(connections, dict):
+        return
+    for connection in connections.values():
+        try:
+            connection.close()
+        except Exception:
+            pass
+    connections.clear()
 
 
 def oauth_client_credentials() -> tuple[str, str]:
