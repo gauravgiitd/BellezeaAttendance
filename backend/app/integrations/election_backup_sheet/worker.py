@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from backend.app.db import database_url
+from backend.app.integrations.election_backup_sheet.constants import is_regression_harness_election
 from backend.app.integrations.election_backup_sheet.queries import build_attendance_sheet_rows
 from backend.app.integrations.election_backup_sheet.sheets_client import (
     ElectionBackupSheetsClient,
@@ -171,6 +172,7 @@ class ElectionBackupSheetWorker:
                 LEFT JOIN election_backup_sheets s ON s.election_id = e.id
                 WHERE e.status = ANY(%s)
                   AND s.election_id IS NULL
+                  AND e.title NOT LIKE 'Regression Harness:%'
                 ORDER BY e.created_at
                 """,
                 (list(BACKUP_SHEET_STATUSES),),
@@ -200,6 +202,8 @@ class ElectionBackupSheetWorker:
 
             election = self.fetch_election(cur, election_id)
             if not election:
+                return
+            if is_regression_harness_election(election.get("title")):
                 return
             if election["status"] not in BACKUP_SHEET_STATUSES:
                 return
@@ -231,6 +235,8 @@ class ElectionBackupSheetWorker:
             )
             row = cur.fetchone()
             if not row:
+                return
+            if is_regression_harness_election(row.get("title")):
                 return
             if row["status"] not in BACKUP_SHEET_STATUSES:
                 return

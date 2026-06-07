@@ -361,8 +361,12 @@ CREATE TRIGGER trg_election_backup_sheet_delete
 CREATE OR REPLACE FUNCTION notify_election_backup_sync() RETURNS trigger AS $$
 DECLARE
   target_election_id uuid;
+  election_title text;
 BEGIN
   IF TG_TABLE_NAME = 'elections' THEN
+    IF NEW.title LIKE 'Regression Harness:%' THEN
+      RETURN NEW;
+    END IF;
     IF TG_OP = 'INSERT' THEN
       PERFORM pg_notify(
         'election_backup_sync',
@@ -385,6 +389,15 @@ BEGIN
     target_election_id := OLD.election_id;
   ELSE
     target_election_id := NEW.election_id;
+  END IF;
+
+  SELECT title
+  INTO election_title
+  FROM elections
+  WHERE id = target_election_id;
+
+  IF election_title LIKE 'Regression Harness:%' THEN
+    RETURN COALESCE(NEW, OLD);
   END IF;
 
   PERFORM pg_notify(

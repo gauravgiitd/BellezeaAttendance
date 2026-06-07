@@ -27,7 +27,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 DEFAULT_DATABASE_URL = f"postgresql://{getpass.getuser()}@127.0.0.1:5432/bellezea_elections"
-TEST_PREFIX = "Regression Harness"
+from backend.app.integrations.election_backup_sheet.constants import REGRESSION_HARNESS_TITLE_PREFIX
+
+TEST_PREFIX = REGRESSION_HARNESS_TITLE_PREFIX.removesuffix(":")
 PROXY_REPORT_HEADER = "Grantor Villa,Proxy Holder Villa,Proxy Holder Name,Attendance Mode,Proxy Holder Email"
 
 VILLA_A = "990001"
