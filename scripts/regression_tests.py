@@ -116,13 +116,13 @@ class RegressionHarness:
         self.keep_data = keep_data
 
     def run(self) -> int:
+        from backend.app.integrations.election_backup_sheet.sync_control import set_backup_sync_paused
+
         if not should_skip_schema():
             os.environ.pop("REGRESSION_HARNESS_ACTIVE", None)
             self.initialize_schema()
             os.environ["REGRESSION_HARNESS_ACTIVE"] = "true"
-        self.cleanup_all()
-        self.seed_residents()
-
+        set_backup_sync_paused(True)
         tests: list[Callable[[], None]] = [
             self.test_resident_directory_and_qr_rules,
             self.test_resident_sync_cleanup,
@@ -143,6 +143,9 @@ class RegressionHarness:
 
         results: list[TestResult] = []
         try:
+            self.cleanup_all()
+            self.seed_residents()
+
             for test in tests:
                 self.cleanup_test_elections()
                 try:
@@ -154,6 +157,7 @@ class RegressionHarness:
                     print(f"FAIL {test.__name__}")
                     print(results[-1].error)
         finally:
+            set_backup_sync_paused(False)
             if self.keep_data:
                 print("Keeping synthetic test data because --keep-data was supplied.")
             else:

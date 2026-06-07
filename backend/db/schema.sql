@@ -326,6 +326,12 @@ CREATE TABLE IF NOT EXISTS election_backup_sheet_deletions (
   last_error text NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS election_backup_sync_pause (
+  id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  paused boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS idx_election_backup_sheet_deletions_pending
   ON election_backup_sheet_deletions(queued_at)
   WHERE deleted_at IS NULL;
@@ -363,6 +369,13 @@ DECLARE
   target_election_id uuid;
   election_title text;
 BEGIN
+  IF EXISTS (SELECT 1 FROM election_backup_sync_pause WHERE id = 1 AND paused) THEN
+    IF TG_TABLE_NAME = 'elections' THEN
+      RETURN NEW;
+    END IF;
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
   IF coalesce(current_setting('app.regression_harness_active', true), '') = 'true' THEN
     IF TG_TABLE_NAME = 'elections' THEN
       RETURN NEW;

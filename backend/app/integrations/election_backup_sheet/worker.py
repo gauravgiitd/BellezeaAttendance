@@ -11,6 +11,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from backend.app.db import database_url
+from backend.app.integrations.election_backup_sheet.sync_control import is_backup_sync_paused
 from backend.app.integrations.election_backup_sheet.constants import is_regression_harness_election
 from backend.app.integrations.election_backup_sheet.queries import build_attendance_sheet_rows
 from backend.app.integrations.election_backup_sheet.sheets_client import (
@@ -100,7 +101,16 @@ class ElectionBackupSheetWorker:
         self.bootstrap_missing_sheets()
         self._last_bootstrap_at = time.monotonic()
 
+    def _should_skip_backup_work(self) -> bool:
+        if is_backup_sync_paused():
+            return True
+        if self._regression_harness_elections_present():
+            return True
+        return False
+
     def enqueue_payload(self, payload: str) -> None:
+        if self._should_skip_backup_work():
+            return
         try:
             message = json.loads(payload)
         except json.JSONDecodeError:
@@ -124,6 +134,8 @@ class ElectionBackupSheetWorker:
         self.pending_actions[f"sync:{election_key}"] = time.monotonic() + DEBOUNCE_SECONDS
 
     def process_due_actions(self) -> None:
+        if self._should_skip_backup_work():
+            return
         now = time.monotonic()
         due_keys = [key for key, due_at in self.pending_actions.items() if due_at <= now]
         for key in due_keys:
@@ -168,8 +180,8 @@ class ElectionBackupSheetWorker:
                 logger.exception("Failed deleting election backup spreadsheet %s", spreadsheet_id)
 
     def bootstrap_missing_sheets(self) -> None:
-        if self._regression_harness_elections_present():
-            logger.info("Skipping backup bootstrap while regression harness elections exist")
+        if self._should_skip_backup_work():
+            logger.info("Skipping backup bootstrap while sync is paused or harness elections exist")
             return
         conn = self._get_work_conn()
         with conn.cursor() as cur:
@@ -199,6 +211,8 @@ class ElectionBackupSheetWorker:
                 logger.exception("Failed bootstrapping election backup sheet for %s", election_id)
 
     def ensure_spreadsheet(self, election_id: str) -> None:
+        if is_backup_sync_paused():
+            return
         conn = self._get_work_conn()
         with conn.cursor() as cur:
             cur.execute(
@@ -230,6 +244,8 @@ class ElectionBackupSheetWorker:
         logger.info("Created election backup spreadsheet for %s", election_id)
 
     def sync_spreadsheet(self, election_id: str) -> None:
+        if is_backup_sync_paused():
+            return
         conn = self._get_work_conn()
         with conn.cursor() as cur:
             cur.execute(

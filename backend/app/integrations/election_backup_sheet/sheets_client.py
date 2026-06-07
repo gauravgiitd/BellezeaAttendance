@@ -6,7 +6,10 @@ import os
 from collections.abc import Callable
 from typing import Any, TypeVar
 
-logger = logging.getLogger(__name__)
+from backend.app.integrations.election_backup_sheet.constants import (
+    REGRESSION_HARNESS_TITLE_PREFIX,
+    is_regression_harness_election,
+)
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive"
 SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
@@ -17,6 +20,8 @@ SERVICE_ACCOUNT_STORAGE_ERROR = (
     "(storage limit is 0). Set GOOGLE_DRIVE_REFRESH_TOKEN using "
     "scripts/authorize_google_drive_backup.py, or use a Google Workspace Shared Drive."
 )
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -50,6 +55,9 @@ class ElectionBackupSheetsClient:
             session.close()
 
     def create_election_spreadsheet(self, title: str) -> dict[str, str]:
+        if is_regression_harness_election(title) or REGRESSION_HARNESS_TITLE_PREFIX in title:
+            raise RuntimeError(f"Refusing to create backup sheet for regression harness title: {title}")
+
         metadata = {
             "name": title,
             "mimeType": "application/vnd.google-apps.spreadsheet",
