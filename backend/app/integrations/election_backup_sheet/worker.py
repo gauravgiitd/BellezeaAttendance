@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import json
 import logging
 import os
@@ -24,11 +25,12 @@ logger = logging.getLogger(__name__)
 NOTIFY_CHANNEL = "election_backup_sync"
 BACKUP_SHEET_STATUSES = ("draft", "attendance_open", "voting_open", "voting_closed")
 POLL_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_POLL_SECONDS", "30"))
-DEBOUNCE_SECONDS = float(os.environ.get("ELECTION_BACKUP_DEBOUNCE_SECONDS", "60"))
+DEBOUNCE_SECONDS = float(os.environ.get("ELECTION_BACKUP_DEBOUNCE_SECONDS", "5"))
 BOOTSTRAP_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_BOOTSTRAP_SECONDS", "300"))
 FAILURE_BACKOFF_SECONDS = float(os.environ.get("ELECTION_BACKUP_FAILURE_BACKOFF_SECONDS", "300"))
 
 _background_thread: threading.Thread | None = None
+_background_worker: "ElectionBackupSheetWorker | None" = None
 _stop_event = threading.Event()
 
 
@@ -294,8 +296,10 @@ class ElectionBackupSheetWorker:
             raise
         finally:
             del headers, summary_row, sheet_rows
+            self._release_sync_memory()
 
         self._record_sync_success(election_id)
+        self._release_sync_memory()
 
     def _record_sync_error(self, election_id: str, message: str) -> None:
         conn = self._get_work_conn()
@@ -323,6 +327,14 @@ class ElectionBackupSheetWorker:
                 (election_id,),
             )
         conn.commit()
+
+    def close(self) -> None:
+        self._close_work_conn()
+        self.sheets_client.close()
+
+    @staticmethod
+    def _release_sync_memory() -> None:
+        gc.collect()
 
     def fetch_election(self, cur, election_id: str) -> dict[str, Any] | None:
         cur.execute("SELECT * FROM elections WHERE id = %s", (election_id,))
@@ -395,7 +407,7 @@ def backup_worker_enabled() -> bool:
 
 
 def start_in_background() -> bool:
-    global _background_thread
+    global _background_thread, _background_worker
 
     if not backup_worker_enabled():
         logger.info(
@@ -409,6 +421,7 @@ def start_in_background() -> bool:
 
     _stop_event.clear()
     worker = ElectionBackupSheetWorker(ElectionBackupSheetsClient.from_env())
+    _background_worker = worker
     _background_thread = threading.Thread(
         target=worker.run_forever,
         args=(_stop_event,),
@@ -420,12 +433,15 @@ def start_in_background() -> bool:
 
 
 def stop_background() -> None:
-    global _background_thread
+    global _background_thread, _background_worker
 
     _stop_event.set()
     if _background_thread and _background_thread.is_alive():
         _background_thread.join(timeout=POLL_INTERVAL_SECONDS + 5)
+    if _background_worker is not None:
+        _background_worker.close()
     _background_thread = None
+    _background_worker = None
 
 
 def run_worker() -> None:

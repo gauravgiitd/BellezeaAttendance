@@ -27,7 +27,9 @@ services:
       - key: SCHEMA_LOCK_TIMEOUT
         value: "30s"
       - key: ELECTION_BACKUP_DEBOUNCE_SECONDS
-        value: "60"
+        value: "5"
+      - key: ELECTION_BACKUP_CLIENT_RESET_EVERY
+        value: "10"
       - key: CORS_ORIGINS
         value: "*"
       - key: OFFICER_EMAIL

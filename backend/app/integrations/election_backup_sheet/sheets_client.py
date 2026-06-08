@@ -30,6 +30,10 @@ class ElectionBackupSheetsClient:
     def __init__(self, credentials: Any, folder_id: str) -> None:
         self._credentials = credentials
         self.folder_id = folder_id
+        self._http: Any | None = None
+        self._drive: Any | None = None
+        self._sheets: Any | None = None
+        self._operation_count = 0
 
     @classmethod
     def from_env(cls) -> "ElectionBackupSheetsClient":
@@ -42,18 +46,43 @@ class ElectionBackupSheetsClient:
             verify_oauth_refresh(credentials)
         return cls(credentials, folder_id)
 
-    def _with_services(self, operation: Callable[[Any, Any], T]) -> T:
+    def close(self) -> None:
+        release_httplib2_connections(self._http)
+        self._http = None
+        self._drive = None
+        self._sheets = None
+        self._operation_count = 0
+
+    def _ensure_services(self) -> tuple[Any, Any]:
+        if self._drive is not None and self._sheets is not None:
+            return self._drive, self._sheets
+
         import google_auth_httplib2
         import httplib2
         from googleapiclient.discovery import build
 
-        http = google_auth_httplib2.AuthorizedHttp(self._credentials, http=httplib2.Http())
+        self._http = google_auth_httplib2.AuthorizedHttp(
+            self._credentials,
+            http=httplib2.Http(),
+        )
+        self._drive = _build_google_service(build, "drive", "v3", self._http)
+        self._sheets = _build_google_service(build, "sheets", "v4", self._http)
+        return self._drive, self._sheets
+
+    def _after_operation(self) -> None:
+        release_httplib2_connections(self._http)
+        self._operation_count += 1
+        reset_every = int(os.environ.get("ELECTION_BACKUP_CLIENT_RESET_EVERY", "20"))
+        if reset_every > 0 and self._operation_count >= reset_every:
+            logger.info("Resetting election backup Google API client after %s operations", reset_every)
+            self.close()
+
+    def _with_services(self, operation: Callable[[Any, Any], T]) -> T:
+        drive, sheets = self._ensure_services()
         try:
-            drive = build("drive", "v3", http=http, cache_discovery=False)
-            sheets = build("sheets", "v4", http=http, cache_discovery=False)
             return operation(drive, sheets)
         finally:
-            release_httplib2_connections(http)
+            self._after_operation()
 
     def create_election_spreadsheet(self, title: str) -> dict[str, str]:
         if is_regression_harness_election(title) or REGRESSION_HARNESS_TITLE_PREFIX in title:
@@ -129,6 +158,13 @@ class ElectionBackupSheetsClient:
             drive.files().delete(fileId=spreadsheet_id).execute()
 
         self._with_services(delete)
+
+
+def _build_google_service(build: Any, name: str, version: str, http: Any) -> Any:
+    try:
+        return build(name, version, http=http, static_discovery=True)
+    except Exception:
+        return build(name, version, http=http, cache_discovery=False)
 
 
 def release_httplib2_connections(http: Any | None) -> None:
