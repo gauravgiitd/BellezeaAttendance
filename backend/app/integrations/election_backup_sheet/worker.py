@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 NOTIFY_CHANNEL = "election_backup_sync"
 BACKUP_SHEET_STATUSES = ("draft", "attendance_open", "voting_open", "voting_closed")
 POLL_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_POLL_SECONDS", "30"))
-DEBOUNCE_SECONDS = float(os.environ.get("ELECTION_BACKUP_DEBOUNCE_SECONDS", "2"))
+DEBOUNCE_SECONDS = float(os.environ.get("ELECTION_BACKUP_DEBOUNCE_SECONDS", "60"))
 BOOTSTRAP_INTERVAL_SECONDS = float(os.environ.get("ELECTION_BACKUP_BOOTSTRAP_SECONDS", "300"))
 FAILURE_BACKOFF_SECONDS = float(os.environ.get("ELECTION_BACKUP_FAILURE_BACKOFF_SECONDS", "300"))
 
